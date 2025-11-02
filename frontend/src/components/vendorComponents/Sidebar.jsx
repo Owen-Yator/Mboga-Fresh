@@ -107,7 +107,7 @@ const Sidebar = ({ className = "" }) => {
 
           <NavLink to="/bulkorders" className={linkClass}>
             <span className="material-symbols-outlined">receipt_long</span>
-            <span>Bulk Orders/Quotes</span>
+            <span>Bulk Orders</span>
           </NavLink>
         </nav>
       </div>
