@@ -19,7 +19,7 @@ import {
   X,
   DollarSign,
 } from "lucide-react";
-import QrScanner from "qr-scanner"; // 1. IMPORT THE SCANNER
+import QrScanner from "qr-scanner";
 
 const formatKsh = (amount) =>
   `Ksh ${Number(amount).toLocaleString("en-KE", { minimumFractionDigits: 0 })}`;
@@ -59,7 +59,7 @@ const getStatusBadgeProps = (status) => {
 };
 
 const RiderDeliveryDetail = () => {
-  const { orderId } = useParams();
+  const { orderId } = useParams(); // This is the TASK ID
   const navigate = useNavigate();
   const { user } = useAuth();
   const location = useLocation();
@@ -89,6 +89,7 @@ const RiderDeliveryDetail = () => {
     setFetchError(null);
 
     try {
+      // This will fail for B2B tasks, which is expected
       const data = await fetchOrderDetails(orderId);
       setOrder(data);
     } catch (err) {
@@ -100,15 +101,21 @@ const RiderDeliveryDetail = () => {
 
       try {
         const acceptedTasks = await fetchRiderAcceptedTasks();
+
+        // Find the task by its own ID (which is what's in the URL)
         const task = acceptedTasks.find(
-          (t) => String(t.orderId) === String(orderId)
+          (t) => String(t.id) === String(orderId)
         );
 
         if (task) {
+          // Reconstruct the 'order' object from the task data
           setOrder({
-            _id: task.orderId,
+            _id: task.orderId, // This is the REAL order ID
             orderStatus: task.status,
-            shippingAddress: { street: task.deliveryAddress, city: "" },
+            shippingAddress: {
+              street: task.deliveryAddress,
+              city: "",
+            },
             items: [
               { name: "Delivery Task", quantity: 1, vendor: task.vendorName },
             ],
@@ -116,7 +123,7 @@ const RiderDeliveryDetail = () => {
               pickupCode: task.pickupCode,
               buyerConfirmationCode: task.buyerConfirmationCode,
             },
-            __isFallback: true,
+            __isFallback: true, // Flag this as failover data
           });
           setFetchError(
             `(Warning: Code ${
@@ -152,11 +159,9 @@ const RiderDeliveryDetail = () => {
       setProcessing(true);
       setApiMessage(null);
 
-      // --- FIX 1: Stop the camera scanner as soon as we start processing ---
       if (qrScannerRef.current) {
         qrScannerRef.current.stop();
       }
-      // --- END OF FIX 1 ---
 
       const codeToUse = scannedCode
         ? scannedCode.toUpperCase()
@@ -165,11 +170,13 @@ const RiderDeliveryDetail = () => {
         : buyerCodeInput;
 
       try {
+        const orderIdToConfirm = order._id; // Use the REAL order ID
+
         if (actionType === "PICKUP") {
           if (!codeToUse || codeToUse.length < 6)
             throw new Error("Pickup code must be 6 characters.");
 
-          await confirmPickup(orderId, codeToUse);
+          await confirmPickup(orderIdToConfirm, codeToUse);
 
           setApiMessage({
             type: "success",
@@ -177,15 +184,14 @@ const RiderDeliveryDetail = () => {
           });
           setVendorCodeInput("");
 
-          // --- FIX 2: Navigate away after success ---
           setTimeout(() => {
             navigate("/riderdeliveryqueue");
-          }, 2000); // 2-second delay
+          }, 2000);
         } else if (actionType === "DELIVERY") {
           if (!codeToUse || codeToUse.length < 6)
             throw new Error("Buyer confirmation code must be 6 digits.");
 
-          await confirmDelivery(orderId, codeToUse);
+          await confirmDelivery(orderIdToConfirm, codeToUse);
 
           setApiMessage({
             type: "success",
@@ -193,35 +199,27 @@ const RiderDeliveryDetail = () => {
           });
           setBuyerCodeInput("");
 
-          // --- FIX 2: Navigate away after success ---
           setTimeout(() => {
             navigate("/riderdeliveryqueue");
-          }, 2000); // 2-second delay
+          }, 2000);
         }
-
-        // --- FIX 3: DO NOT RELOAD. We are navigating away. ---
-        // await loadOrderDetails(); // <-- REMOVED
       } catch (err) {
         const msg =
           err.response?.data?.message || err.message || "Confirmation failed.";
         setApiMessage({ type: "error", text: msg });
-
-        // --- FIX 3: Do not restart camera on error. Let user retry. ---
-        // setShowManualInput(false); // <-- REMOVED
       } finally {
         setProcessing(false);
       }
     },
-    [order, orderId, vendorCodeInput, buyerCodeInput, navigate] // Removed loadOrderDetails
+    [order, vendorCodeInput, buyerCodeInput, navigate]
   );
 
   useEffect(() => {
-    // --- FIX 3: Add !apiMessage to prevent re-scan after success/error ---
     if (!showManualInput && videoRef.current && !processing && !apiMessage) {
       qrScannerRef.current = new QrScanner(
         videoRef.current,
         (result) => {
-          if (processing) return; // Don't allow multiple scans if one is processing
+          if (processing) return;
 
           console.log("Decoded QR code:", result.data);
           qrScannerRef.current.stop();
@@ -231,8 +229,8 @@ const RiderDeliveryDetail = () => {
 
           try {
             const parsedData = JSON.parse(result.data);
-            scannedCode = parsedData.code.trim().toUpperCase();
-            scannedType = parsedData.type.trim().toUpperCase();
+            scannedCode = (parsedData.code || "NO-CODE").trim().toUpperCase();
+            scannedType = (parsedData.type || "SIMPLE").trim().toUpperCase();
           } catch (e) {
             scannedCode = result.data.trim().toUpperCase();
             scannedType = "SIMPLE";
@@ -246,17 +244,26 @@ const RiderDeliveryDetail = () => {
             currentStatus === "in delivery" || currentStatus === "in transit";
 
           if (isPickup) {
-            if (scannedType === "PICKUP" || scannedType === "SIMPLE") {
+            // --- THIS IS THE FIX ---
+            // Allow "PICKUP" (B2C) OR "BULK_PICKUP" (B2B)
+            if (
+              scannedType === "PICKUP" ||
+              scannedType === "BULK_PICKUP" ||
+              scannedType === "SIMPLE"
+            ) {
+              // --- END OF FIX ---
               setVendorCodeInput(scannedCode);
               handleStatusUpdate("PICKUP", scannedCode);
             } else {
               setApiMessage({
                 type: "error",
-                text: "Wrong QR Code. Please scan the VENDOR's code.",
+                text: "Wrong QR Code. Please scan the VENDOR/FARMER's code.",
               });
               setTimeout(() => qrScannerRef.current?.start(), 2000);
             }
           } else if (isDelivery) {
+            // This is for B2C "DELIVERY" or B2B "VENDOR_CONFIRMATION"
+            // For now, "SIMPLE" and "DELIVERY" will work
             if (scannedType === "DELIVERY" || scannedType === "SIMPLE") {
               setBuyerCodeInput(scannedCode);
               handleStatusUpdate("DELIVERY", scannedCode);
@@ -288,7 +295,6 @@ const RiderDeliveryDetail = () => {
       });
     }
 
-    // Cleanup
     return () => {
       if (qrScannerRef.current) {
         qrScannerRef.current.stop();
@@ -296,24 +302,23 @@ const RiderDeliveryDetail = () => {
         qrScannerRef.current = null;
       }
     };
-  }, [showManualInput, order, processing, handleStatusUpdate, apiMessage]); // <-- Added apiMessage dependency
+  }, [showManualInput, order, processing, handleStatusUpdate, apiMessage]);
 
-  // RENDER HELPER: Renders the Manual Input Form
   const renderManualForm = (type) => {
     const isPickup = type === "PICKUP";
     const codeValue = isPickup ? vendorCodeInput : buyerCodeInput;
     const setCodeValue = isPickup ? setVendorCodeInput : setBuyerCodeInput;
     const buttonLabel = isPickup ? "Verify Pickup" : "Complete Delivery";
     const placeholderText = isPickup
-      ? "Enter VENDOR Pickup Code"
-      : "Enter BUYER Confirmation Code";
+      ? "Enter VENDOR/FARMER Pickup Code"
+      : "Enter BUYER/VENDOR Confirmation Code";
     const isCodeValid = codeValue.length === 6;
 
     return (
       <div className="space-y-4 pt-2">
         <p className="text-sm text-gray-600 mb-2">
           Enter the 6-digit code provided by{" "}
-          {isPickup ? "the Vendor" : "the Buyer"}:
+          {isPickup ? "the Vendor/Farmer" : "the Buyer/Vendor"}:
         </p>
         <input
           type={isPickup ? "text" : "number"}
@@ -338,8 +343,8 @@ const RiderDeliveryDetail = () => {
         </button>
         <button
           onClick={() => {
-            setApiMessage(null); // Clear any errors
-            setShowManualInput(false); // Switch to camera
+            setApiMessage(null);
+            setShowManualInput(false);
           }}
           className="w-full py-1 text-sm text-blue-600 hover:underline transition"
         >
@@ -349,7 +354,6 @@ const RiderDeliveryDetail = () => {
     );
   };
 
-  // Renders the Camera Placeholder View
   const renderScanView = (type) => (
     <div className="space-y-4 pt-2">
       <div className="relative w-full max-w-sm h-64 mx-auto mb-3 rounded-xl overflow-hidden border-4 border-gray-300 bg-black">
@@ -365,8 +369,8 @@ const RiderDeliveryDetail = () => {
 
       <button
         onClick={() => {
-          setApiMessage(null); // Clear any errors
-          setShowManualInput(true); // Switch to manual
+          setApiMessage(null);
+          setShowManualInput(true);
         }}
         className="w-full py-3 rounded-lg font-bold text-white transition bg-red-600 hover:bg-red-700"
       >
@@ -374,8 +378,6 @@ const RiderDeliveryDetail = () => {
       </button>
     </div>
   );
-
-  // --- Main Render Logic ---
 
   if (loading) {
     return (
@@ -432,7 +434,7 @@ const RiderDeliveryDetail = () => {
     order.items?.[0]?.vendor?.businessName ||
     order.items?.[0]?.vendor?.name ||
     order.items?.[0]?.vendor ||
-    "Vendor";
+    "Vendor/Farmer";
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
@@ -441,7 +443,8 @@ const RiderDeliveryDetail = () => {
         <div className="bg-white rounded-xl shadow-xl p-6 border border-gray-200 space-y-6">
           <div className="pb-4 border-b">
             <h1 className="text-2xl font-bold text-gray-900">
-              Task: Order #{orderId.substring(18).toUpperCase()}
+              {/* Use the real order ID */}
+              Task: Order #{order._id.substring(18).toUpperCase()}
             </h1>
             <p className="text-sm text-gray-600 mt-1">
               Status:{" "}

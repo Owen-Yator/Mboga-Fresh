@@ -2,12 +2,14 @@ import Order from "../models/order.model.js";
 import Product from "../models/product.model.js";
 import Notification from "../models/notification.model.js";
 import DeliveryTask from "../models/deliveryTask.model.js";
+import BulkOrder from "../models/bulkOrder.model.js"; // <-- 1. IMPORT BULK ORDER
+import BulkDeliveryTask from "../models/bulkDeliveryTask.model.js"; // <-- 2. IMPORT BULK TASK
+import { User } from "../models/user.model.js"; // <-- 3. IMPORT USER
 import { initiateSTKPush } from "../services/daraja.service.js";
-// FIX: Import the notification function from the correct controller
 import { notifyAllAvailableRiders } from "./rider.controller.js";
 import mongoose from "mongoose";
 
-// --- VENDOR NOTIFICATION HELPER ---
+// --- NOTIFICATION HELPER ---
 const createDbNotification = async (recipientId, orderId, message) => {
   const newNotification = new Notification({
     recipient: recipientId,
@@ -162,7 +164,7 @@ const updateOrderStatusAndNotifyRider = async (req, res) => {
 
     const newTask = await DeliveryTask.create({
       order: orderId,
-      vendor: vendorId,
+      vendor: vendorId, // This is correct for B2C, it matches the old model
       status: "Awaiting Acceptance",
       pickupCode: pickupCode,
       buyerConfirmationCode: buyerConfirmationCode,
@@ -177,10 +179,12 @@ const updateOrderStatusAndNotifyRider = async (req, res) => {
       `Order accepted. Status: Awaiting Rider Pickup (Code: ${pickupCode}).`
     );
 
-    const vendorInfo =
-      order.items && order.items.length > 0 ? order.items[0].vendor : vendorId;
+    // 4. FIX: Get the vendor's profile info to pass their name
+    const vendorUser = await User.findById(vendorId)
+      .select("name businessName")
+      .lean();
 
-    await notifyAllAvailableRiders(newTask._id, vendorInfo);
+    await notifyAllAvailableRiders(newTask._id, vendorUser);
 
     res.json({
       message: `Order accepted and Delivery Task created.`,
@@ -228,6 +232,7 @@ const getVendorOrders = async (req, res) => {
   }
 };
 
+// --- THIS IS THE FULLY REBUILT FUNCTION ---
 const getOrderDetailsById = async (req, res) => {
   const { orderId } = req.params;
   const userId = req.user._id;
@@ -238,63 +243,64 @@ const getOrderDetailsById = async (req, res) => {
   }
 
   try {
-    const order = await Order.findById(orderId)
+    let order = null;
+    let task = null;
+    let isB2C = false;
+
+    // 1. Try to find a B2C (Retail) Order
+    order = await Order.findById(orderId)
       .populate("items.vendor", "name businessName")
       .lean();
 
-    if (!order) {
-      console.warn(`[OrderAuth] 404: Order ID ${orderId} not found.`);
-      return res.status(404).json({
-        message: "Order not found.",
-      });
-    }
+    if (order) {
+      isB2C = true;
+      task = await DeliveryTask.findOne({ order: orderId }).lean();
+    } else {
+      // 2. If not found, try to find a B2B (Bulk) Order
+      order = await BulkOrder.findById(orderId)
+        .populate("vendorId", "name phone") // The "buyer"
+        .populate("farmerId", "name farmName") // The "seller"
+        .lean();
 
-    let isAuthorized = false;
-    let taskDetails = null;
-
-    // --- FIX: Fetch task details for ANY role associated with the order ---
-    if (
-      userRole === "rider" ||
-      userRole === "buyer" ||
-      userRole === "vendor" ||
-      userRole === "admin"
-    ) {
-      taskDetails = await DeliveryTask.findOne({
-        order: orderId,
-      }).lean();
-    }
-    // --- END OF FIX ---
-
-    // Check A: Buyer or Admin
-    if (String(order.user) === String(userId) || userRole === "admin") {
-      isAuthorized = true;
-    }
-
-    // Check B: Rider access via DeliveryTask
-    if (userRole === "rider") {
-      // We check taskDetails.rider *after* fetching the task
-      if (taskDetails && String(taskDetails.rider) === String(userId)) {
-        isAuthorized = true;
+      if (order) {
+        isB2C = false;
+        task = await BulkDeliveryTask.findOne({ bulkOrder: orderId }).lean();
       }
     }
 
-    // Check C: Vendor access
-    if (userRole === "vendor") {
-      const isVendorForOrder = order.items.some(
+    if (!order) {
+      console.warn(
+        `[OrderAuth] 404: Order ID ${orderId} not found in any collection.`
+      );
+      return res.status(404).json({ message: "Order not found." });
+    }
+
+    // 3. Check Authorization
+    let isAuthorized = false;
+    if (userRole === "admin") {
+      isAuthorized = true;
+    } else if (isB2C) {
+      // B2C Authorization
+      const isBuyer = String(order.user) === String(userId);
+      const isVendor = order.items.some(
         (item) => String(item.vendor._id) === String(userId)
       );
-      if (isVendorForOrder) {
-        // Vendor is authorized if they are part of the order
-        isAuthorized = true;
-      }
+      const isRider = task && String(task.rider) === String(userId);
+      isAuthorized = isBuyer || isVendor || isRider;
+    } else {
+      // B2B Authorization
+      const isBuyer = String(order.vendorId._id) === String(userId); // The vendor is the buyer
+      const isSeller = String(order.farmerId._id) === String(userId); // The farmer is the seller
+      const isRider = task && String(task.driver) === String(userId);
+      isAuthorized = isBuyer || isSeller || isRider;
     }
 
     if (isAuthorized) {
       console.log(
         `[OrderAuth] Access granted for User ${userId} (Role: ${userRole}) to Order ${orderId}.`
       );
-      // Attach task details (if they exist) for all authorized roles
-      return res.json({ ...order, task: taskDetails });
+      // Attach task details (if they exist)
+      return res.json({ ...order, task: task });
     } else {
       console.warn(
         `[OrderAuth] 403: Access denied for User ${userId} (Role: ${userRole}) to Order ${orderId}.`
@@ -314,6 +320,7 @@ const getOrderDetailsById = async (req, res) => {
     });
   }
 };
+// --- END OF REBUILT FUNCTION ---
 
 const checkOrderStatus = async (req, res) => {
   const { orderId } = req.params;
@@ -323,6 +330,7 @@ const checkOrderStatus = async (req, res) => {
   }
 
   try {
+    // This check is B2C only. B2B would need a separate status check.
     const order = await Order.findById(orderId).select(
       "paymentStatus orderStatus paymentFailureReason"
     );
@@ -342,7 +350,6 @@ const checkOrderStatus = async (req, res) => {
   }
 };
 
-// --- NEW FUNCTION TO GET PICKUP CODE ---
 const getTaskForVendor = async (req, res) => {
   const { orderId } = req.params;
   const vendorId = req.user._id;
@@ -354,8 +361,8 @@ const getTaskForVendor = async (req, res) => {
   try {
     const task = await DeliveryTask.findOne({
       order: orderId,
-      vendor: vendorId,
-    }).select("pickupCode status"); // Only send what's needed
+      vendor: vendorId, // This is correct for the B2C task model
+    }).select("pickupCode status");
 
     if (!task) {
       return res
@@ -369,8 +376,6 @@ const getTaskForVendor = async (req, res) => {
     res.status(500).json({ message: "Failed to fetch task." });
   }
 };
-
-// --- FINAL EXPORTS (Core Functions ONLY) ---
 
 export {
   placeOrder,

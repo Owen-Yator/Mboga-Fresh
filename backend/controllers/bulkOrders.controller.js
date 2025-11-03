@@ -1,7 +1,7 @@
 import BulkOrder from "../models/bulkOrder.model.js";
 import BulkProduct from "../models/bulkProduct.model.js";
 import FarmerProfile from "../models/farmerProfile.model.js";
-// MODIFIED: Import the new, separate task model
+// MODIFIED: Import the correct B2B task model
 import BulkDeliveryTask from "../models/bulkDeliveryTask.model.js";
 import fs from "fs";
 import path from "path";
@@ -17,6 +17,7 @@ function escapeRegex(str = "") {
   return String(str).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+// Helper to generate random codes
 const generateRandomCode = (length = 6) => {
   return Math.random()
     .toString(36)
@@ -24,7 +25,6 @@ const generateRandomCode = (length = 6) => {
     .toUpperCase();
 };
 
-// ... (schemas and file upload helper are unchanged) ...
 const createSchema = Joi.object({
   name: Joi.string().min(2).required(),
   category: Joi.string().required(),
@@ -53,7 +53,6 @@ function firstUploadedFile(req) {
   return null;
 }
 
-// ... (list, getOne, createOne, updateOne, removeOne, placeBulkOrder, getMyBulkOrders are unchanged) ...
 export const list = async (req, res) => {
   try {
     const {
@@ -273,6 +272,8 @@ export const removeOne = async (req, res) => {
   }
 };
 
+// --- B2B Order Flow ---
+
 export const placeBulkOrder = async (req, res) => {
   try {
     const vendorUserId = req.user._id;
@@ -313,6 +314,9 @@ export const placeBulkOrder = async (req, res) => {
   }
 };
 
+// @desc    Get all bulk orders placed BY the logged-in vendor
+// @route   GET /api/bulk-orders/my-orders
+// @access  Private (Vendor)
 export const getMyBulkOrders = async (req, res) => {
   try {
     const vendorUserId = req.user._id;
@@ -323,12 +327,20 @@ export const getMyBulkOrders = async (req, res) => {
         select: "name",
       })
       .populate({
-        path: "farmerId",
+        path: "farmerId", // Populate the farmer's User model
         select: "name avatar",
       })
+      // --- THIS IS THE MODIFICATION ---
+      .populate({
+        path: "task",
+        select: "vendorConfirmationCode status", // Get the code and status
+        model: "BulkDeliveryTask",
+      })
+      // --- END MODIFICATION ---
       .sort({ createdAt: -1 })
       .lean();
 
+    // Enrich with FarmerProfile farmName
     const farmerIds = orders.map((o) => o.farmerId?._id).filter(Boolean);
     const profiles = await FarmerProfile.find({ user: { $in: farmerIds } })
       .select("user farmName")
@@ -367,7 +379,6 @@ export const getFarmerBulkOrders = async (req, res) => {
   }
 };
 
-// --- THIS IS THE MODIFIED FUNCTION ---
 export const acceptBulkOrder = async (req, res) => {
   try {
     const order = await BulkOrder.findById(req.params.id);
@@ -393,7 +404,7 @@ export const acceptBulkOrder = async (req, res) => {
       status: "Awaiting Acceptance",
     });
 
-    await newTask.save(); // This will no longer have a duplicate key error
+    await newTask.save();
 
     // 2. Update the order
     order.orderStatus = "QR Scanning";
@@ -410,7 +421,6 @@ export const acceptBulkOrder = async (req, res) => {
     if (err.name === "ValidationError") {
       return res.status(400).json({ message: err.message });
     }
-    // Check for duplicate key error on 'bulkOrder' (which is good, means we didn't double-accept)
     if (err.code === 11000 && err.keyPattern && err.keyPattern.bulkOrder) {
       return res
         .status(400)
@@ -438,7 +448,6 @@ export const getBulkOrderTask = async (req, res) => {
         .json({ message: "Task not yet created for this order" });
     }
 
-    // MODIFIED: Find from the correct task collection
     const task = await BulkDeliveryTask.findById(order.task).lean();
     if (!task) {
       return res.status(404).json({ message: "Task not found" });

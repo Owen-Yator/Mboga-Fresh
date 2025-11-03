@@ -4,7 +4,7 @@ import Notification from "../models/notification.model.js";
 import { User } from "../models/user.model.js";
 import mongoose from "mongoose";
 import BulkOrder from "../models/bulkOrder.model.js";
-import BulkDeliveryTask from "../models/bulkDeliveryTask.model.js"; // Import Bulk Task Model
+import BulkDeliveryTask from "../models/bulkDeliveryTask.model.js"; // Import the B2B task model
 
 // --- NOTIFICATION HELPER ---
 const createDbNotification = async (
@@ -32,14 +32,17 @@ const createDbNotification = async (
 // --- HELPER: Notifies all Riders of a new task ---
 export const notifyAllAvailableRiders = async (taskId, sellerProfile) => {
   try {
+    // This logic is for B2C tasks.
+    // We will need a new one for B2B tasks (e.g., notifyAllTruckDrivers).
     const riders = await User.find({ role: "rider", status: "active" }).select(
       "_id"
     );
     if (riders.length === 0)
       return console.log("No riders found in the User collection.");
 
+    // Use businessName for Vendors, farmName for Farmers
     const sellerName =
-      sellerProfile?.farmName || sellerProfile?.businessName || "a seller";
+      sellerProfile?.businessName || sellerProfile?.farmName || "a seller";
 
     const notifications = riders.map((rider) => ({
       recipient: rider._id,
@@ -63,28 +66,27 @@ export const notifyAllAvailableRiders = async (taskId, sellerProfile) => {
 
 export const fetchAllAvailableTasks = async (req, res) => {
   try {
+    // 1. Fetch B2C (Retail) Tasks
     const b2cTasks = await DeliveryTask.find({ status: "Awaiting Acceptance" })
-      .populate("vendor", "name businessName")
+      .populate("vendor", "name businessName") // B2C uses 'vendor'
       .populate("order", "totalAmount")
       .sort({ createdAt: 1 })
       .lean();
 
+    // 2. Fetch B2B (Bulk) Tasks
     const b2bTasks = await BulkDeliveryTask.find({
       status: "Awaiting Acceptance",
     })
-      .populate("seller", "name farmName")
+      .populate("seller", "name farmName") // B2B uses 'seller'
       .populate("bulkOrder", "totalAmount")
       .sort({ createdAt: 1 })
       .lean();
 
-    // Map B2C tasks
+    // 3. Map B2C tasks
     const mappedB2CTasks = b2cTasks
       .map((task) => {
         const orderData = task.order;
-        // --- THIS IS THE FIX ---
-        // If the task has no order or no seller, filter it out.
-        if (!orderData || !task.vendor) return null;
-        // --- END OF FIX ---
+        if (!orderData || !task.vendor) return null; // Safety check
 
         return {
           id: task._id,
@@ -98,16 +100,13 @@ export const fetchAllAvailableTasks = async (req, res) => {
           type: "B2C",
         };
       })
-      .filter(Boolean); // Remove any null tasks
+      .filter(Boolean); // Remove any null/bad tasks
 
-    // Map B2B tasks
+    // 4. Map B2B tasks
     const mappedB2BTasks = b2bTasks
       .map((task) => {
         const orderData = task.bulkOrder;
-        // --- THIS IS THE FIX ---
-        // If the task has no order or no seller, filter it out.
-        if (!orderData || !task.seller) return null;
-        // --- END OF FIX ---
+        if (!orderData || !task.seller) return null; // Safety check
 
         return {
           id: task._id,
@@ -121,8 +120,9 @@ export const fetchAllAvailableTasks = async (req, res) => {
           type: "B2B",
         };
       })
-      .filter(Boolean); // Remove any null tasks
+      .filter(Boolean); // Remove any null/bad tasks
 
+    // 5. Combine and re-sort
     const allTasks = [...mappedB2CTasks, ...mappedB2BTasks].sort(
       (a, b) => new Date(a.createdAt) - new Date(b.createdAt)
     );
@@ -138,40 +138,41 @@ export const fetchRiderAcceptedTasks = async (req, res) => {
   const riderId = req.user._id;
 
   try {
+    // 1. Fetch B2C (Retail) Tasks
     const b2cTasks = await DeliveryTask.find({
       rider: riderId,
       status: { $in: ["Accepted/Awaiting Pickup", "In Transit"] },
     })
-      .populate("vendor", "name businessName")
+      .populate("vendor", "name businessName") // B2C uses 'vendor'
       .populate({
         path: "order",
         select: "shippingAddress totalAmount user",
-        populate: { path: "user", select: "name phone" },
+        populate: { path: "user", select: "name phone" }, // B2C buyer
       })
       .sort({ createdAt: -1 })
       .lean();
 
+    // 2. Fetch B2B (Bulk) Tasks
     const b2bTasks = await BulkDeliveryTask.find({
-      driver: riderId,
+      driver: riderId, // B2B uses 'driver'
       status: { $in: ["Accepted/Awaiting Pickup", "In Transit"] },
     })
-      .populate("seller", "name farmName")
+      .populate("seller", "name farmName") // B2B uses 'seller'
       .populate({
         path: "bulkOrder",
         select: "shippingAddress totalAmount vendorId",
-        populate: { path: "vendorId", select: "name phone" },
+        populate: { path: "vendorId", select: "name phone" }, // B2B buyer (the vendor)
       })
       .sort({ createdAt: -1 })
       .lean();
 
-    // Map B2C
+    // 3. Map B2C tasks
     const mappedB2CTasks = b2cTasks
       .map((task) => {
         const orderData = task.order;
-        // --- THIS IS THE FIX ---
-        if (!orderData || !task.vendor) return null;
-        // --- END OF FIX ---
+        if (!orderData || !task.vendor) return null; // Safety check
         const buyerData = orderData.user;
+
         return {
           id: task._id,
           orderId: orderData._id,
@@ -194,16 +195,15 @@ export const fetchRiderAcceptedTasks = async (req, res) => {
           type: "B2C",
         };
       })
-      .filter(Boolean); // Remove nulls
+      .filter(Boolean);
 
-    // Map B2B
+    // 4. Map B2B tasks
     const mappedB2BTasks = b2bTasks
       .map((task) => {
         const orderData = task.bulkOrder;
-        // --- THIS IS THE FIX ---
-        if (!orderData || !task.seller) return null;
-        // --- END OF FIX ---
-        const buyerData = orderData.vendorId;
+        if (!orderData || !task.seller) return null; // Safety check
+        const buyerData = orderData.vendorId; // The Vendor is the buyer
+
         return {
           id: task._id,
           orderId: orderData._id,
@@ -226,8 +226,9 @@ export const fetchRiderAcceptedTasks = async (req, res) => {
           type: "B2B",
         };
       })
-      .filter(Boolean); // Remove nulls
+      .filter(Boolean);
 
+    // 5. Combine and re-sort
     const allTasks = [...mappedB2CTasks, ...mappedB2BTasks].sort(
       (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
     );
@@ -248,6 +249,7 @@ export const acceptDeliveryTask = async (req, res) => {
       return res.status(400).json({ message: "Invalid Task ID format." });
     }
 
+    // Try to find and update a B2C task
     let task = await DeliveryTask.findOneAndUpdate(
       { _id: taskId, status: "Awaiting Acceptance", rider: null },
       { $set: { rider: riderId, status: "Accepted/Awaiting Pickup" } },
@@ -255,8 +257,9 @@ export const acceptDeliveryTask = async (req, res) => {
     );
 
     let orderId = task?.order;
-    let sellerId = task?.vendor; // B2C uses 'vendor' field
+    let sellerId = task?.vendor; // B2C uses 'vendor'
 
+    // If not found, try to find and update a B2B task
     if (!task) {
       task = await BulkDeliveryTask.findOneAndUpdate(
         { _id: taskId, status: "Awaiting Acceptance", driver: null },
@@ -264,7 +267,7 @@ export const acceptDeliveryTask = async (req, res) => {
         { new: true }
       );
       orderId = task?.bulkOrder;
-      sellerId = task?.seller; // B2B uses 'seller' field
+      sellerId = task?.seller; // B2B uses 'seller'
     }
 
     if (!task) {
@@ -273,6 +276,7 @@ export const acceptDeliveryTask = async (req, res) => {
         .json({ message: "Task already accepted or does not exist." });
     }
 
+    // Notify the correct seller
     await createDbNotification(
       sellerId,
       orderId,
@@ -297,6 +301,7 @@ export const confirmPickupByRider = async (req, res) => {
       return res.status(400).json({ message: "Invalid Order ID format." });
     }
 
+    // Check B2C tasks
     let task = await DeliveryTask.findOneAndUpdate(
       {
         order: orderId,
@@ -308,6 +313,7 @@ export const confirmPickupByRider = async (req, res) => {
       { new: true }
     );
 
+    // Check B2B tasks
     if (!task) {
       task = await BulkDeliveryTask.findOneAndUpdate(
         {
@@ -359,6 +365,7 @@ export const confirmDeliveryByRider = async (req, res) => {
       return res.status(400).json({ message: "Invalid Order ID format." });
     }
 
+    // Check B2C tasks
     let task = await DeliveryTask.findOneAndUpdate(
       {
         order: orderId,
@@ -370,6 +377,7 @@ export const confirmDeliveryByRider = async (req, res) => {
       { new: true }
     );
 
+    // Check B2B tasks
     if (!task) {
       task = await BulkDeliveryTask.findOneAndUpdate(
         {
@@ -423,18 +431,20 @@ export const getRiderEarningsAndHistory = async (req, res) => {
   const riderId = req.user._id;
 
   try {
+    // Find ALL delivered tasks (B2C)
     const b2cTasks = await DeliveryTask.find({
       rider: riderId,
       status: "Delivered",
     })
-      .select("deliveryFee createdAt")
+      .select("deliveryFee createdAt order") // Modified
       .lean();
 
+    // Find ALL delivered tasks (B2B)
     const b2bTasks = await BulkDeliveryTask.find({
       driver: riderId,
       status: "Delivered",
     })
-      .select("deliveryFee createdAt")
+      .select("deliveryFee createdAt bulkOrder") // Modified
       .lean();
 
     const allTasks = [...b2cTasks, ...b2bTasks];

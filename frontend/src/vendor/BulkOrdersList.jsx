@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-// MODIFIED: Import from the new bulkOrders API
 import { fetchMyBulkOrders } from "../api/bulkOrders";
 import { useAuth } from "../context/AuthContext";
 import { Loader2 } from "lucide-react";
+import { QRCodeCanvas } from "qrcode.react"; // <-- 1. IMPORT QR CODE
 
 const formatCurrency = (amount) =>
   `Ksh ${Number(amount).toLocaleString("en-KE", { minimumFractionDigits: 0 })}`;
@@ -35,6 +35,14 @@ const getPaymentColor = (payment) => {
   }
 };
 
+// 2. ADD A NEW BUTTON STYLE
+const getActionButton = (status) => {
+  if (status === "In Transit") {
+    return "bg-emerald-600 text-white hover:bg-emerald-700";
+  }
+  return "border border-gray-300 text-gray-700 bg-white hover:bg-gray-50";
+};
+
 const BulkOrdersList = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -43,12 +51,15 @@ const BulkOrdersList = () => {
   const [apiError, setApiError] = useState(null);
   const [activeTab, setActiveTab] = useState("pending");
 
+  // 3. ADD STATE FOR THE MODAL
+  const [showQrModal, setShowQrModal] = useState(false);
+  const [qrCodeData, setQrCodeData] = useState(null);
+
   const loadMyBulkOrders = useCallback(async () => {
     if (!user) return;
     setLoading(true);
     setApiError(null);
     try {
-      // MODIFIED: Using the new API call
       const data = await fetchMyBulkOrders();
 
       const mappedOrders = data.map((order) => {
@@ -74,6 +85,8 @@ const BulkOrdersList = () => {
           amount: formatCurrency(order.totalAmount),
           status: order.orderStatus,
           payment: paymentStatus,
+          // 4. STORE THE TASK DATA
+          task: order.task,
         };
       });
 
@@ -91,14 +104,28 @@ const BulkOrdersList = () => {
     loadMyBulkOrders();
   }, [loadMyBulkOrders]);
 
-  const viewDetails = (id) => {
-    // This can be a modal in the future
-    console.log("View details for:", id);
+  // 5. ADD HANDLER TO SHOW THE QR CODE
+  const handleShowConfirmationQR = (order) => {
+    if (order.status !== "In Transit" || !order.task) {
+      alert("This order is not in transit or the task data is missing.");
+      return;
+    }
+
+    setQrCodeData({
+      orderId: order.id,
+      code: order.task.vendorConfirmationCode,
+      buyerName: user.name,
+    });
+    setShowQrModal(true);
   };
 
   const filteredOrders = orders.filter((order) => {
     if (activeTab === "pending")
-      return order.status === "Pending" || order.status === "Confirmed";
+      return (
+        order.status === "Pending" ||
+        order.status === "Confirmed" ||
+        order.status === "QR Scanning"
+      );
     if (activeTab === "delivery") return order.status === "In Transit";
     if (activeTab === "completed")
       return order.status === "Delivered" || order.status === "Cancelled";
@@ -108,7 +135,10 @@ const BulkOrdersList = () => {
   const getTabCount = (tab) => {
     if (tab === "pending")
       return orders.filter(
-        (o) => o.status === "Pending" || o.status === "Confirmed"
+        (o) =>
+          o.status === "Pending" ||
+          o.status === "Confirmed" ||
+          o.status === "QR Scanning"
       ).length;
     if (tab === "delivery")
       return orders.filter((o) => o.status === "In Transit").length;
@@ -120,7 +150,6 @@ const BulkOrdersList = () => {
   };
 
   return (
-    // MODIFIED: Removed Header, Sidebar, and main/flex layout
     <div>
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-gray-900 mb-2">
@@ -231,11 +260,17 @@ const BulkOrdersList = () => {
                     </span>
                   </td>
                   <td className="py-4 px-6 text-right">
+                    {/* 6. MODIFY THE BUTTON */}
                     <button
-                      onClick={() => viewDetails(order.id)}
-                      className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 font-semibold hover:bg-gray-50 text-sm"
+                      onClick={() => handleShowConfirmationQR(order)}
+                      disabled={order.status !== "In Transit"}
+                      className={`px-4 py-2 rounded-lg font-semibold text-sm ${getActionButton(
+                        order.status
+                      )} disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed`}
                     >
-                      View Details
+                      {order.status === "In Transit"
+                        ? "Confirm Delivery"
+                        : "View Details"}
                     </button>
                   </td>
                 </tr>
@@ -244,6 +279,52 @@ const BulkOrdersList = () => {
           </table>
         )}
       </div>
+
+      {/* 7. ADD THE QR CODE MODAL */}
+      {showQrModal && qrCodeData && (
+        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50">
+          <div className="bg-white p-8 rounded-lg shadow-xl w-full max-w-md relative">
+            <h2 className="text-xl font-semibold text-gray-800 mb-2 text-center">
+              Rider Delivery Confirmation
+            </h2>
+            <p className="text-gray-600 text-sm mb-6 text-center">
+              Ask the rider to scan this code to confirm your delivery.
+            </p>
+            <div className="flex justify-center mb-6 bg-white p-4 rounded">
+              <QRCodeCanvas
+                value={JSON.stringify({
+                  type: "DELIVERY", // Use a generic "DELIVERY" type
+                  code: qrCodeData.code || "NO-CODE",
+                  orderId: qrCodeData.orderId,
+                })}
+                size={256}
+                level="H"
+                includeMargin={true}
+              />
+            </div>
+            <div className="text-center mb-4">
+              <p className="text-sm font-medium text-gray-700">
+                Order: #{qrCodeData.orderId.substring(18).toUpperCase()}
+              </p>
+              <p className="text-4xl font-bold text-gray-900 tracking-widest my-2">
+                {qrCodeData.code}
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => {
+                  setShowQrModal(false);
+                  setQrCodeData(null);
+                  loadMyBulkOrders(); // Refresh orders in case status changed
+                }}
+                className="flex-1 px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
