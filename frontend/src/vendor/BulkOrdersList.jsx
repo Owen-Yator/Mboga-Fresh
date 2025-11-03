@@ -1,36 +1,86 @@
-// frontend/src/vendor/BulkOrdersList.jsx - FINAL VERSION (B2B Orders View)
-
 import React, { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { fetchVendorOrders } from "../api/orders";
+// MODIFIED: Import from the new bulkOrders API
+import { fetchMyBulkOrders } from "../api/bulkOrders";
 import { useAuth } from "../context/AuthContext";
 import { Loader2 } from "lucide-react";
 
-// Helper to format currency
 const formatCurrency = (amount) =>
   `Ksh ${Number(amount).toLocaleString("en-KE", { minimumFractionDigits: 0 })}`;
+
+const getStatusColor = (status) => {
+  switch (status) {
+    case "Pending":
+      return "bg-yellow-100 text-yellow-700";
+    case "Confirmed":
+      return "bg-blue-100 text-blue-700";
+    case "In Transit":
+      return "bg-cyan-100 text-cyan-700";
+    case "Delivered":
+      return "bg-green-100 text-green-700";
+    case "Cancelled":
+      return "bg-red-100 text-red-700";
+    default:
+      return "bg-gray-100 text-gray-700";
+  }
+};
+
+const getPaymentColor = (payment) => {
+  switch (payment) {
+    case "Paid":
+    case "Escrow":
+      return "bg-green-100 text-green-700";
+    default:
+      return "bg-red-100 text-red-700";
+  }
+};
 
 const BulkOrdersList = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [apiError, setApiError] = useState(null);
+  const [activeTab, setActiveTab] = useState("pending");
 
-  // Fetch orders where THIS user is the BUYER of the bulk goods (B2B orders)
-  // NOTE: This currently uses fetchVendorOrders which fetches orders *where the vendor is the seller*.
-  // This is TEMPORARILY incorrect based on API design, but we map the data structure to simulate B2B.
-  const loadOutgoingBulkOrders = useCallback(async () => {
+  const loadMyBulkOrders = useCallback(async () => {
     if (!user) return;
     setLoading(true);
+    setApiError(null);
     try {
-      // In a production system, this would call fetchOrdersByBuyerId or similar.
-      // For now, we simulate data for the sake of the page layout.
-      const data = await fetchVendorOrders();
-      setOrders(data);
+      // MODIFIED: Using the new API call
+      const data = await fetchMyBulkOrders();
+
+      const mappedOrders = data.map((order) => {
+        const itemsList =
+          order.items
+            ?.map((i) => `${i.quantity}x ${i.name || "Item"}`)
+            .join(", ") || "Items missing";
+
+        let paymentStatus = "Unpaid";
+        if (
+          order.paymentStatus === "Paid" ||
+          order.paymentStatus === "Escrow"
+        ) {
+          paymentStatus = order.orderStatus === "Delivered" ? "Paid" : "Escrow";
+        }
+
+        return {
+          ...order,
+          id: order._id,
+          farmer:
+            order.farmerInfo?.farmName || order.farmerInfo?.name || "Farmer",
+          items: itemsList,
+          amount: formatCurrency(order.totalAmount),
+          status: order.orderStatus,
+          payment: paymentStatus,
+        };
+      });
+
+      setOrders(mappedOrders);
     } catch (err) {
       console.error("Error fetching outgoing bulk orders:", err);
-      setError("Failed to load your outgoing bulk orders/quotes.");
+      setApiError("Failed to load your outgoing bulk orders.");
       setOrders([]);
     } finally {
       setLoading(false);
@@ -38,99 +88,162 @@ const BulkOrdersList = () => {
   }, [user]);
 
   useEffect(() => {
-    loadOutgoingBulkOrders();
-  }, [loadOutgoingBulkOrders]);
+    loadMyBulkOrders();
+  }, [loadMyBulkOrders]);
 
   const viewDetails = (id) => {
-    navigate(`/bulkorderdetails/${id}`);
+    // This can be a modal in the future
+    console.log("View details for:", id);
   };
 
-  const statusStyles = {
-    Delivered: "bg-green-50 text-green-700",
-    "In Transit": "bg-blue-50 text-blue-700",
-    Processing: "bg-yellow-50 text-yellow-700",
-    Cancelled: "bg-red-50 text-red-700",
-    Default: "bg-gray-100 text-gray-700",
-  };
+  const filteredOrders = orders.filter((order) => {
+    if (activeTab === "pending")
+      return order.status === "Pending" || order.status === "Confirmed";
+    if (activeTab === "delivery") return order.status === "In Transit";
+    if (activeTab === "completed")
+      return order.status === "Delivered" || order.status === "Cancelled";
+    return true;
+  });
 
-  const getTotalItems = (items) =>
-    items.reduce((sum, i) => sum + i.quantity, 0);
+  const getTabCount = (tab) => {
+    if (tab === "pending")
+      return orders.filter(
+        (o) => o.status === "Pending" || o.status === "Confirmed"
+      ).length;
+    if (tab === "delivery")
+      return orders.filter((o) => o.status === "In Transit").length;
+    if (tab === "completed")
+      return orders.filter(
+        (o) => o.status === "Delivered" || o.status === "Cancelled"
+      ).length;
+    return 0;
+  };
 
   return (
+    // MODIFIED: Removed Header, Sidebar, and main/flex layout
     <div>
-      <h2 className="text-3xl font-bold mb-4">
-        My Bulk Orders (Quotes to Farmers)
-      </h2>
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold text-gray-900 mb-2">
+          My Bulk Orders
+        </h1>
+        <p className="text-gray-600">Track your bulk purchases from farmers.</p>
+        {apiError && (
+          <div className="mt-4 text-red-600 bg-red-100 p-3 rounded-lg">
+            {apiError}
+          </div>
+        )}
+      </div>
 
-      <p className="mb-6 text-base text-gray-600">
-        This list tracks the status of the bulk orders you have placed with
-        suppliers/farmers.
-      </p>
+      <div className="flex space-x-8 border-b border-gray-200 mb-6">
+        {[
+          { id: "pending", label: "Pending" },
+          { id: "delivery", label: "In Transit" },
+          { id: "completed", label: "Completed" },
+        ].map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={`pb-4 px-1 relative ${
+              activeTab === tab.id
+                ? "text-emerald-600 font-medium"
+                : "text-gray-600 hover:text-gray-900"
+            }`}
+          >
+            <div className="flex items-center space-x-2">
+              <span>{tab.label}</span>
+              <span className="bg-emerald-100 text-emerald-700 text-xs font-semibold px-2 py-0.5 rounded-full">
+                {getTabCount(tab.id)}
+              </span>
+            </div>
+            {activeTab === tab.id && (
+              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-emerald-600"></div>
+            )}
+          </button>
+        ))}
+      </div>
 
-      {loading ? (
-        <div className="text-center py-12 text-gray-600">
-          <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2 text-emerald-600" />
-          Loading your bulk supply history...
-        </div>
-      ) : error ? (
-        <div className="text-red-600 bg-red-100 p-3 rounded-lg">{error}</div>
-      ) : orders.length === 0 ? (
-        <div className="text-center py-12 text-gray-600 bg-white rounded-xl shadow-md">
-          No bulk orders/quotes found.
-        </div>
-      ) : (
-        <div className="space-y-6">
-          {orders.map((o) => {
-            const badgeClass =
-              statusStyles[o.orderStatus] || statusStyles.Default;
-            const firstItemName = o.items[0]?.name || "Unknown Product";
-            const totalUnits = getTotalItems(o.items);
-            const totalAmount = o.totalAmount;
-
-            return (
-              <div
-                key={o._id}
-                className="bg-white rounded-xl shadow p-4 flex flex-col md:flex-row gap-4 items-start md:items-center"
-              >
-                <div className="flex-1">
-                  <div className="flex items-center gap-4 mb-2">
+      <div className="bg-white rounded-lg shadow-sm overflow-hidden">
+        {loading ? (
+          <div className="text-center py-12 text-gray-600">
+            <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2 text-emerald-600" />
+            Loading your bulk supply history...
+          </div>
+        ) : filteredOrders.length === 0 ? (
+          <div className="text-center py-12 text-gray-600">
+            No {activeTab} orders found.
+          </div>
+        ) : (
+          <table className="w-full">
+            <thead className="bg-gray-50">
+              <tr className="border-b border-gray-200">
+                <th className="text-left py-4 px-6 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Order ID
+                </th>
+                <th className="text-left py-4 px-6 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Farmer
+                </th>
+                <th className="text-left py-4 px-6 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Items
+                </th>
+                <th className="text-left py-4 px-6 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Total
+                </th>
+                <th className="text-left py-4 px-6 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Status
+                </th>
+                <th className="text-left py-4 px-6 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Payment
+                </th>
+                <th className="py-4 px-6"></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-200">
+              {filteredOrders.map((order) => (
+                <tr key={order.id} className="hover:bg-gray-50">
+                  <td className="py-4 px-6 text-sm text-gray-900 font-medium">
+                    {order.id.substring(18).toUpperCase()}
+                  </td>
+                  <td className="py-4 px-6 text-sm text-gray-700">
+                    {order.farmer}
+                  </td>
+                  <td className="py-4 px-6 text-sm text-gray-700">
+                    {order.items}
+                  </td>
+                  <td className="py-4 px-6 text-sm text-gray-900 font-medium">
+                    {order.amount}
+                  </td>
+                  <td className="py-4 px-6">
                     <span
-                      className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${badgeClass}`}
+                      className={`inline-flex px-3 py-1 text-xs font-semibold rounded-full ${getStatusColor(
+                        order.status
+                      )}`}
                     >
-                      {o.orderStatus}
+                      {order.status}
                     </span>
-                    <div className="text-sm text-gray-500">
-                      {new Date(o.createdAt).toLocaleDateString()}
-                    </div>
-                  </div>
-
-                  <h3 className="text-lg font-bold mt-2">
-                    Quote #{o._id.substring(18).toUpperCase()}
-                  </h3>
-
-                  <p className="text-sm text-gray-700 mt-1">
-                    **Items:** {firstItemName} and {o.items.length - 1}{" "}
-                    other(s). ({totalUnits} total units)
-                  </p>
-
-                  <p className="mt-2 font-semibold text-gray-900">
-                    Total Value: {formatCurrency(totalAmount)}
-                  </p>
-                </div>
-
-                <div className="flex-shrink-0 flex flex-col gap-2 justify-start">
-                  <button
-                    onClick={() => viewDetails(o._id)}
-                    className="px-4 py-2 rounded-lg border border-emerald-600 text-emerald-700 font-semibold hover:bg-emerald-50"
-                  >
-                    View Quote Details
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
+                  </td>
+                  <td className="py-4 px-6">
+                    <span
+                      className={`inline-flex px-3 py-1 text-xs font-semibold rounded-full ${getPaymentColor(
+                        order.payment
+                      )}`}
+                    >
+                      {order.payment}
+                    </span>
+                  </td>
+                  <td className="py-4 px-6 text-right">
+                    <button
+                      onClick={() => viewDetails(order.id)}
+                      className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 font-semibold hover:bg-gray-50 text-sm"
+                    >
+                      View Details
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
     </div>
   );
 };

@@ -1,53 +1,38 @@
-// frontend/src/components/vendorComponents/Sidebar.jsx
 import React from "react";
-import { useLocation, useNavigate, NavLink } from "react-router-dom";
-import { vendorCategories } from "../../constants";
+import { useLocation, useNavigate } from "react-router-dom";
+// MODIFIED: Import the one true category list
+import { categories as hardCodedCategories } from "../../constants";
 
 const Sidebar = ({ className = "" }) => {
   const navigate = useNavigate();
   const location = useLocation();
-
-  // ✅ Only enable filtering inside /farmily route
-  const isFarmily = location.pathname.startsWith("/farmily");
   const params = new URLSearchParams(location.search);
-  const activeCategory = params.get("category") || "All Categories";
 
-  const goToCategory = (categorySlug) => {
-    if (!isFarmily) return; // ignore for other pages
+  // Get the current "view" (products, cart, or orders)
+  const activeView = params.get("view") || "products";
+  // Get the current category filter
+  const activeCategory = params.get("category") || "all";
 
-    const category =
-      !categorySlug || categorySlug === "products"
-        ? "All Categories"
-        : decodeURIComponent(categorySlug);
+  // MODIFIED: This function now sets the URL params
+  const setView = (viewName) => {
+    navigate(`/farmily?view=${viewName}`);
+  };
 
-    // ✅ only navigate if it’s actually different
-    if (category !== activeCategory) {
-      const path =
-        category === "All Categories"
-          ? "/farmily"
-          : `/farmily?category=${encodeURIComponent(category)}`;
-      navigate(path);
+  const goToCategory = (categoryId) => {
+    if (categoryId === "all") {
+      navigate("/farmily"); // No params for all products
+    } else {
+      navigate(`/farmily?category=${encodeURIComponent(categoryId)}`);
     }
   };
 
-  const isCategoryActive = (slug) => {
-    if (!isFarmily) return false;
-    if (slug === "products" && activeCategory === "All Categories") return true;
-    return slug.toLowerCase() === activeCategory.toLowerCase();
-  };
-
-  const handleCartClick = () => {
-    if (isFarmily) navigate("/farmily?view=full-cart");
-    else navigate("/bulkcart");
-  };
-
-  const linkClass = ({ isActive }) =>
+  const linkClass = (isActive) =>
     `w-full text-left flex items-center gap-3 px-4 py-2 rounded-lg transition-colors font-medium 
-     ${
-       isActive
-         ? "bg-emerald-100 dark:bg-emerald-700/20 text-emerald-600"
-         : "text-gray-800 dark:text-gray-200 hover:bg-emerald-50 dark:hover:bg-emerald-700/10"
-     }`;
+    ${
+      isActive
+        ? "bg-emerald-100 dark:bg-emerald-700/20 text-emerald-600"
+        : "text-gray-800 dark:text-gray-200 hover:bg-emerald-50 dark:hover:bg-emerald-700/10"
+    }`;
 
   return (
     <aside
@@ -58,29 +43,40 @@ const Sidebar = ({ className = "" }) => {
           Farm-ily Marketplace
         </h1>
 
-        {/* Product Categories - Always visible */}
         <nav className="flex flex-col gap-2" aria-label="Product categories">
           <span className="text-xs font-semibold text-gray-500 mb-1">
             PRODUCT CATEGORIES
           </span>
-          {vendorCategories.map((c) => {
-            const slug = c.to.split("/").pop();
+
+          <button
+            key="all"
+            onClick={() => goToCategory("all")}
+            className={linkClass({
+              isActive: activeView === "products" && activeCategory === "all",
+            })}
+          >
+            <span className="material-symbols-outlined" aria-hidden>
+              grid_view
+            </span>
+            <span>All Products</span>
+          </button>
+
+          {hardCodedCategories.map((c) => {
+            const isActive =
+              activeView === "products" && activeCategory === c.id;
             return (
               <button
-                key={c.to}
-                onClick={() => goToCategory(slug)}
-                className={`w-full text-left flex items-center gap-3 px-4 py-2 rounded-lg transition-colors font-medium ${
-                  isCategoryActive(slug)
-                    ? "bg-emerald-100 dark:bg-emerald-700/20 text-emerald-600"
-                    : "text-gray-800 dark:text-gray-200 hover:bg-emerald-50 dark:hover:bg-emerald-700/10"
-                }`}
+                key={c.id}
+                onClick={() => goToCategory(c.id)}
+                className={linkClass({ isActive })}
+                aria-current={isActive ? "true" : undefined}
               >
                 {c.icon && (
                   <span className="material-symbols-outlined" aria-hidden>
                     {c.icon}
                   </span>
                 )}
-                <span>{c.label}</span>
+                <span>{c.name}</span>
               </button>
             );
           })}
@@ -93,22 +89,23 @@ const Sidebar = ({ className = "" }) => {
             MANAGE ORDERS & CART
           </span>
 
+          {/* MODIFIED: Use <button> and setView */}
           <button
-            onClick={handleCartClick}
-            className={linkClass({
-              isActive:
-                location.pathname.includes("/bulkcart") ||
-                location.search.includes("view=full-cart"),
-            })}
+            onClick={() => setView("cart")}
+            className={linkClass({ isActive: activeView === "cart" })}
           >
             <span className="material-symbols-outlined">shopping_cart</span>
             <span>My Bulk Cart</span>
           </button>
 
-          <NavLink to="/bulkorders" className={linkClass}>
+          {/* MODIFIED: Use <button> and setView */}
+          <button
+            onClick={() => setView("orders")}
+            className={linkClass({ isActive: activeView === "orders" })}
+          >
             <span className="material-symbols-outlined">receipt_long</span>
             <span>Bulk Orders</span>
-          </NavLink>
+          </button>
         </nav>
       </div>
     </aside>

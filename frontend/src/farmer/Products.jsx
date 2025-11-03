@@ -1,8 +1,8 @@
-// frontend/src/farmer/Products.jsx
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import { Edit2, Trash2, Plus, X } from "lucide-react";
 import Header from "../components/FarmerComponents/Header";
-import { vendorCategories } from "../constants";
+// MODIFIED: Import the *correct* category list
+import { categories as hardCodedCategories } from "../constants";
 import {
   fetchBulkProducts,
   createBulkProduct,
@@ -31,7 +31,8 @@ export default function Products() {
     file: null,
     imagePreview: "",
     name: "",
-    category: vendorCategories?.[0]?.label ?? "",
+    // MODIFIED: Use the 'id' from the correct list
+    category: hardCodedCategories?.[0]?.id ?? "",
     priceLabel: "",
     price: 0,
     quantity: "",
@@ -46,8 +47,13 @@ export default function Products() {
         setProducts([]);
         return;
       }
-      const data = await fetchBulkProducts({ ownerId: user._id, limit: 100 });
-      setProducts(Array.isArray(data) ? data : []);
+      const data = await fetchBulkProducts({ ownerId: user._id, limit: 1000 });
+      // MODIFIED: Read 'products' from the returned object
+      if (data && Array.isArray(data.products)) {
+        setProducts(data.products);
+      } else {
+        setProducts(Array.isArray(data) ? data : []);
+      }
     } catch (err) {
       console.error("Failed to load bulk products:", err);
       setProducts([]);
@@ -57,15 +63,18 @@ export default function Products() {
   }, [user]);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    if (!loadingAuth && user) {
+      load();
+    }
+  }, [load, loadingAuth, user]);
 
   function resetForm() {
     setForm({
       file: null,
       imagePreview: "",
       name: "",
-      category: vendorCategories?.[0]?.label ?? "",
+      // MODIFIED: Reset to the 'id'
+      category: hardCodedCategories?.[0]?.id ?? "",
       priceLabel: "",
       price: 0,
       quantity: "",
@@ -89,7 +98,8 @@ export default function Products() {
       file: null,
       imagePreview: product.imagePath || product.image || "",
       name: product.name || "",
-      category: product.category || vendorCategories?.[0]?.label,
+      // MODIFIED: Default to the 'id'
+      category: product.category || hardCodedCategories?.[0]?.id,
       priceLabel:
         product.priceLabel || (product.price ? `KSh ${product.price}` : ""),
       price: product.price || 0,
@@ -301,6 +311,11 @@ export default function Products() {
               {!loading &&
                 products.map((product, idx) => {
                   const id = product._id || product.id;
+                  // MODIFIED: Find display name from the correct list
+                  const categoryDisplay =
+                    hardCodedCategories.find((c) => c.id === product.category)
+                      ?.name || product.category;
+
                   return (
                     <tr
                       key={id}
@@ -328,7 +343,7 @@ export default function Products() {
                         {product.name}
                       </td>
                       <td className="py-4 px-6 text-sm text-gray-600">
-                        {product.category}
+                        {categoryDisplay}
                       </td>
                       <td className="py-4 px-6 text-sm text-gray-900">
                         {product.priceLabel}
@@ -422,7 +437,11 @@ export default function Products() {
                 >
                   {form.imagePreview ? (
                     <img
-                      src={form.imagePreview}
+                      src={
+                        form.imagePreview.startsWith("data:")
+                          ? form.imagePreview
+                          : resolveImageUrl(form.imagePreview)
+                      }
                       alt="Preview"
                       className="w-full h-full object-cover"
                     />
@@ -496,9 +515,10 @@ export default function Products() {
                     className="w-full rounded-md border px-3 py-2"
                     required
                   >
-                    {vendorCategories?.map((c) => (
-                      <option key={c.label} value={c.label}>
-                        {c.label}
+                    {/* MODIFIED: Use 'id' and 'name' from the correct list */}
+                    {hardCodedCategories?.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
                       </option>
                     ))}
                   </select>

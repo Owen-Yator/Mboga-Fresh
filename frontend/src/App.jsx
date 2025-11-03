@@ -37,10 +37,11 @@ import Vendorprofile from "./vendor/vendorprofile.jsx";
 import VendorDashboard from "./vendor/VendoDashboard.jsx";
 import OrderManagement from "./vendor/OrderManagement.jsx";
 import VendorProducts from "./vendor/VendorProducts.jsx";
-import Farmily from "./vendor/Farmily.jsx";
+import Farmily from "./vendor/Farmily.jsx"; // <-- This is now the main hub
 import VendorWallet from "./vendor/VendorWallet.jsx";
-import BulkOrdersList from "./vendor/BulkOrdersList.jsx";
-import VendorCartPage from "./vendor/VendorCartPage.jsx";
+// MODIFIED: These are no longer separate pages
+// import BulkOrdersList from "./vendor/BulkOrdersList.jsx";
+// import VendorCartPage from "./vendor/VendorCartPage.jsx";
 import VendorCheckout from "./vendor/VendorCheckout.jsx";
 
 // Rider pages
@@ -70,7 +71,6 @@ import ReportsAnalytics from "./admin/ReportsAnalytics.jsx";
 import ProductManagement from "./admin/ProductManagement.jsx";
 import DeliveryAndLogistics from "./admin/DeliveryAndLogistics.jsx";
 import AdminOrderManagement from "./admin/OrderManagement.jsx";
-// import ReportsAnalytics from "./admin/ReportsAnalytics.jsx";
 
 function App() {
   return (
@@ -80,11 +80,8 @@ function App() {
           <div>
             <Routes>
               {/* ==============================================================
-              1. PUBLIC BROWSING & AUTH ROUTES
-              - Allows: Unauthenticated users (guests) and logged-in buyers.
-              - Action: Redirects logged-in staff (Vendor/Farmer/Rider/Admin) to their dashboard.
-              ==============================================================
-            */}
+               1. PUBLIC BROWSING & AUTH ROUTES
+              ============================================================== */}
               <Route
                 element={
                   <PrivateRoute
@@ -99,15 +96,11 @@ function App() {
                 <Route path="/product/:id" element={<ProductDetails />} />
                 <Route path="/category/:id" element={<CategoryPage />} />
                 <Route path="/vendor/:id" element={<VendorPage />} />
-
-                {/* Public Info Routes */}
                 <Route path="/contact" element={<Contact />} />
                 <Route path="/faq" element={<Faq />} />
                 <Route path="/terms" element={<Terms />} />
                 <Route path="/privacy" element={<Privacy />} />
                 <Route path="/help" element={<Help />} />
-
-                {/* Login & Signup Routes */}
                 <Route path="/login" element={<Login />} />
                 <Route path="/signup/vendor" element={<VendorSignup />} />
                 <Route path="/signup/farmer" element={<FarmerSignUp />} />
@@ -116,9 +109,8 @@ function App() {
               </Route>
 
               {/* ==============================================================
-              2. PROTECTED ROUTES (REQUIRES LOGIN)
-              ==============================================================
-            */}
+               2. PROTECTED ROUTES (REQUIRES LOGIN)
+              ============================================================== */}
 
               {/* Buyer (ONLY accessible by Buyer/Admin) */}
               <Route
@@ -142,9 +134,11 @@ function App() {
                 <Route path="/farmily" element={<Farmily />} />
                 <Route path="/vendorwallet" element={<VendorWallet />} />
                 <Route path="/vendorprofile" element={<Vendorprofile />} />
-                <Route path="/bulkorders" element={<BulkOrdersList />} />
-                <Route path="/vendor-cart" element={<VendorCartPage />} />
                 <Route path="/vendor-checkout" element={<VendorCheckout />} />
+
+                {/* MODIFIED: Removed these routes */}
+                {/* <Route path="/bulkorders" element={<BulkOrdersList />} /> */}
+                {/* <Route path="/vendor-cart" element={<VendorCartPage />} /> */}
               </Route>
 
               {/* Farmer (Supplier) (ONLY accessible by Farmer/Admin) */}
@@ -216,11 +210,8 @@ function App() {
                   element={<AdminDisputeResolution />}
                 />
                 <Route path="/adminreports" element={<ReportsAnalytics />} />
-                {/* Assuming you want to include this new import once component is ready: */}
-                {/* <Route path="/adminreports" element={<ReportsAnalytics />} /> */}
               </Route>
 
-              {/* Final Fallback: Redirects all unknown paths to the public homepage */}
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </div>

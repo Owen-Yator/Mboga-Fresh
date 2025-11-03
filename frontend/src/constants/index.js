@@ -3,29 +3,33 @@ export const categories = [
     id: "vegetables",
     name: "Vegetables",
     img: "https://lh3.googleusercontent.com/aida-public/AB6AXuAMrKOlhg_mlTPfXU1ILPJnQCBu5e_zz2eyPIwsEgNVaSx0jNXboTb2FK1T6BnutRgK_JaoJCwVjN9OlIl0rcsZzCAAbBrmdLVoEGcNTQjcLJxuDXYBoIAIRHiZku_JmlTbeD_pua7BBrVCvhWB7UWGwxa_BdSuyOFghkE345UzpJRp3SFby56BsqLcL_bQYpalUX9OlZis675NNmsm2Id9Ex3_5q1jZ0-lb9pMBypcbzilDI2EJysYwBcHgfJ64cgi0gF72AjzPJA",
+    icon: "eco", // Added icon
   },
   {
     id: "fruits",
     name: "Fruits",
     img: "https://lh3.googleusercontent.com/aida-public/AB6AXuC6aakDyqKofqUq6UorrT6_6k6pAoofUUKJ6RoMszqEunN_Cx5lI4puTxGwQnzWMPxUk7PzSCheIgqWqahnvyVEB47hYG0adVb5uiEbuHU3JZY7lyqtStcvjoqmdo4DRqrpJFtY7ZN_TQ8QV-VoGo58mirugLYrtf_-6uivlqnG7962pnZrxq6P5GS_4-MhKBANtkW8w9bL3PXGO1Wibg0rhwRJWkdarWqXYpS0rBJ0xrvHuJe3cK2epGQaPhsZWtmhjM0gJ1RS7Wk",
+    icon: "ios", // Changed icon
   },
   {
     id: "grains",
     name: "Grains",
     img: "https://lh3.googleusercontent.com/aida-public/AB6AXuAVUiGBaKpjFcMbI0OVtvZYVBTzBGEBCMSOhlUlttXebAwcjJnAQGR8c4MACzaWyCs2Dckkc7hNgazsQxPnGZenVpuwvxTHxsRhwzp0iAxVcnFm_dnn4-laECkXHMcOU5pA7qB2z7kmZoxXNWpRSVG-d2YYWWkEWVRLDelYZBaqynhQKswOxcacGrcex5ilPJ15pWxVClBLDlp5T8qwmQX7vGkKvrm8iQa6TfBkIAXh6QsMq_NtKOnVcJQbbGne-kZW5CZlV3h6bdw",
+    icon: "grain",
   },
   {
     id: "dairy",
     name: "Dairy",
     img: "https://lh3.googleusercontent.com/aida-public/AB6AXuDrsKCqnp8K2Zvoo_EDaGsLLh08TxgBTjMXCksRtr1WyD7w1Af7cSj4tghyQVMZbIcSp-3h-9U9L01PiYBwaI3ch6_v6MSryR1SyCtQ4MS7548Ao_6BRRWNL_zRthBlKLL5QRy7FWoZmUhcrsg3YO8Q-HOViFf0LcvP8NOuTISDwSMBkeZQ0rzmXCDzgwK6S_-N145OSFkqemtyEHDQJ4IMWIWKvi-73CgW03sxFhSC55RLPiO2b-hJTAGmids8eKcpZf-uiS8CW1o",
+    icon: "egg",
   },
   {
     id: "herbs",
-    name: "Herbs",
+    name: "Herbs", // Standardized name
     img: "https://lh3.googleusercontent.com/aida-public/AB6AXuDj24WxO9zScxN0NgLD1n17Lf7W923tNxRAm55Q2bh8DC6m8YIQtyg2xYHWb3w-ZKXMY8V9Ne-pGxC1JhOUs56pACCcD1Cfc0uaZEuCG24fxOSiqTK6oUprXnM3gXj44G45R4-Rg0EUMU-TPfjG8UDTfBvGSZxCIMJp4p9wibjMMiZIAIY1s25u55TQFEgpBV7va-lL3q-uXWKySHd3cOLctQvor19-eRGr16QI3FR9wReoBzomWOYpU8g7ZvgwUwocTs56nr3ujgA",
+    icon: "spa",
   },
 ];
-
 export const vendors = [
   {
     id: "mama-rose",
@@ -429,47 +433,6 @@ export const suppliersampleProducts = [
       "https://lh3.googleusercontent.com/aida-public/AB6AXuBZXMZhxIVDwrzKiGhL2xs8GCDNEM_6CMnrp_EOtb0qQIUmmHA8U6hc9T56qLk59pnHGLQd_TDhmjHUP5ufcgIs-PiaJjxmTqMY6DV6ZwYiV_qyQAXJNkFUk7RVXGkZ2K5OjUzUSONBijiC2NCLES-uD9TN3CuPn2NAqy4oKr92PaEVqOiW2Q4HhKu8JcXincO8kusoiAjD-cSTFpwClnVMchW4dNUiBCuClQIpZljD_hiTOeed2jcr5OzXRS0hi-QnFQz2DPbbhz4",
     category: "Fruits",
     featured: true,
-  },
-];
-
-// categories to render in the sidebar (order matters)
-export const vendorCategories = [
-  {
-    label: "All Products",
-    to: "/products",
-    icon: "grid_view",
-    highlight: true,
-    id: "all", // Added an ID for consistency
-  },
-  {
-    id: "vegetables", // <<< MODIFICATION ADDED
-    label: "Vegetables",
-    to: "/category/vegetables",
-    icon: "eco",
-  },
-  {
-    id: "fruits", // <<< MODIFICATION ADDED
-    label: "Fruits",
-    to: "/category/fruits",
-    icon: "ios",
-  },
-  {
-    id: "grains", // <<< MODIFICATION ADDED
-    label: "Grains & Cereals",
-    to: "/category/grains",
-    icon: "grain",
-  },
-  {
-    id: "dairy", // <<< MODIFICATION ADDED
-    label: "Dairy",
-    to: "/category/dairy",
-    icon: "egg",
-  },
-  {
-    id: "herbs", // <<< MODIFICATION ADDTD
-    label: "Herbs & Spices",
-    to: "/category/herbs",
-    icon: "spa",
   },
 ];
 
