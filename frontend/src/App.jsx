@@ -58,6 +58,7 @@ import Products from "./farmer/Products.jsx";
 import FarmerOrderManagement from "./farmer/OrderManagement.jsx";
 import SupplierProfile from "./farmer/SupplierProfile.jsx";
 import SupplierWallet from "./farmer/SupplierWallet.jsx";
+import { FarmerDataProvider } from "./context/FarmerDataContext.jsx";
 
 // Admin pages
 import AdminDashboard from "./admin/AdminDashboard.jsx";
@@ -137,15 +138,15 @@ function App() {
                   path="/vendor-order-placed"
                   element={<VendorOrderPlaced />}
                 />
-
-                {/* MODIFIED: Removed these routes */}
-                {/* <Route path="/bulkorders" element={<BulkOrdersList />} /> */}
-                {/* <Route path="/vendor-cart" element={<VendorCartPage />} /> */}
               </Route>
 
               {/* Farmer (Supplier) (ONLY accessible by Farmer/Admin) */}
               <Route
-                element={<PrivateRoute allowedRoles={["farmer", "admin"]} />}
+                element={
+                  <FarmerDataProvider>
+                    <PrivateRoute allowedRoles={["farmer", "admin"]} />
+                  </FarmerDataProvider>
+                }
               >
                 <Route
                   path="/supplierdashboard"

@@ -1,16 +1,19 @@
-// vendor/VendorWallet.jsx
+// frontend/src/farmer/SupplierWallet.jsx
 import React, { useState } from "react";
 import Header from "../components/FarmerComponents/Header";
 import Footer from "../components/FarmerComponents/Footer";
-import { useVendorData } from "../context/VendorDataContext";
-
+import { useFarmerData } from "../context/FarmerDataContext"; // <-- 1. MODIFIED IMPORT
 import { useAuth } from "../context/AuthContext";
+import { Loader2 } from "lucide-react"; // <-- 2. Import Loader
 
 function SupplierWallet() {
-  const { user, loadingAuth } = useAuth();
+  const { user } = useAuth();
+  // 3. MODIFIED: Get data from the correct context
+  const { balances, transactions, handleWithdraw, unreadCount, loading } =
+    useFarmerData();
+
   const [mpesa, setMpesa] = useState("254712345678");
   const [amount, setAmount] = useState("");
-  const { balances, transactions, handleWithdraw } = useVendorData();
 
   function handleWithdrawSubmit(e) {
     e.preventDefault();
@@ -18,24 +21,19 @@ function SupplierWallet() {
       alert("Enter an amount to withdraw");
       return;
     }
-
+    // ... (rest of withdrawal logic is ok for simulation) ...
     const withdrawAmount = parseFloat(amount);
     if (isNaN(withdrawAmount) || withdrawAmount <= 0) {
       alert("Please enter a valid amount");
       return;
     }
-
     if (withdrawAmount > balances.available) {
       alert("Insufficient funds");
       return;
     }
-
     const success = handleWithdraw(withdrawAmount, mpesa);
     if (success) {
-      alert(`Withdrawing Ksh ${withdrawAmount.toLocaleString()} to ${mpesa}`);
       setAmount("");
-    } else {
-      alert("Withdrawal failed. Please try again.");
     }
   }
 
@@ -44,6 +42,7 @@ function SupplierWallet() {
       <Header
         avatarUrl={user?.avatar || ""}
         userName={user?.name || "Supplier"}
+        unreadCount={unreadCount} // Pass unread count
       />
 
       <main className="max-w-7xl mx-auto px-6 py-8">
@@ -52,7 +51,7 @@ function SupplierWallet() {
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
           {/* Left / center: main content */}
           <section className="lg:col-span-3 space-y-6">
-            {/* Stats cards */}
+            {/* 4. MODIFIED: Stats cards now use dynamic 'balances' */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="bg-white rounded-lg p-6 shadow-sm flex flex-col">
                 <div className="text-xs text-gray-500">Funds in Escrow</div>
@@ -60,14 +59,12 @@ function SupplierWallet() {
                   Ksh {balances.escrow.toLocaleString()}
                 </div>
               </div>
-
               <div className="bg-white rounded-lg p-6 shadow-sm flex flex-col">
                 <div className="text-xs text-gray-500">Available Balance</div>
                 <div className="mt-4 text-2xl font-bold">
                   Ksh {balances.available.toLocaleString()}
                 </div>
               </div>
-
               <div className="bg-white rounded-lg p-6 shadow-sm flex flex-col">
                 <div className="text-xs text-gray-500">Total Earnings</div>
                 <div className="mt-4 text-2xl font-bold">
@@ -76,52 +73,73 @@ function SupplierWallet() {
               </div>
             </div>
 
-            {/* Transaction history */}
+            {/* 5. MODIFIED: Transaction history from dynamic 'transactions' */}
             <div className="bg-white rounded-lg shadow-sm p-6">
               <h3 className="font-semibold text-lg mb-4">
                 Transaction History
               </h3>
               <div className="overflow-x-auto">
-                <table className="w-full text-sm table-auto">
-                  <thead>
-                    <tr className="text-left text-gray-500">
-                      <th className="pb-3">Date</th>
-                      <th className="pb-3">Order ID</th>
-                      <th className="pb-3">Description</th>
-                      <th className="pb-3">Amount</th>
-                      <th className="pb-3">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {transactions.map((t, idx) => (
-                      <tr key={idx} className="border-t">
-                        <td className="py-3 text-gray-600">{t.date}</td>
-                        <td className="py-3 text-gray-600">{t.id}</td>
-                        <td className="py-3 text-gray-600">{t.desc}</td>
-                        <td
-                          className={`py-3 ${
-                            t.amount < 0 ? "text-red-500" : "text-gray-800"
-                          }`}
-                        >
-                          Ksh {Math.abs(t.amount).toLocaleString()}
-                        </td>
-                        <td className="py-3">
-                          <span
-                            className={`px-3 py-1 rounded-full text-xs font-medium ${
-                              t.status === "Released"
-                                ? "bg-green-100 text-green-700"
-                                : t.status === "Completed"
-                                ? "bg-gray-100 text-gray-700"
-                                : "bg-blue-100 text-blue-700"
+                {loading ? (
+                  <div className="text-center py-12 text-gray-600">
+                    <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2 text-emerald-600" />
+                    Loading transactions...
+                  </div>
+                ) : transactions.length === 0 ? (
+                  <div className="text-center py-12 text-gray-600">
+                    No transactions found.
+                  </div>
+                ) : (
+                  <table className="w-full text-sm table-auto">
+                    <thead>
+                      <tr className="text-left text-gray-500">
+                        <th className="pb-3">Date</th>
+                        <th className="pb-3">Order ID</th>
+                        <th className="pb-3">Description</th>
+                        <th className="pb-3">Amount</th>
+                        <th className="pb-3">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {transactions.map((t, idx) => (
+                        <tr key={t._id} className="border-t">
+                          <td className="py-3 text-gray-600">
+                            {new Date(t.createdAt).toLocaleDateString()}
+                          </td>
+                          <td className="py-3 text-gray-600">
+                            {t._id.substring(18).toUpperCase()}
+                          </td>
+                          <td className="py-3 text-gray-600">
+                            {t.items
+                              .map((i) => `${i.quantity}x ${i.name}`)
+                              .join(", ")}
+                          </td>
+                          <td
+                            className={`py-3 ${
+                              t.orderStatus === "Delivered"
+                                ? "text-green-600"
+                                : "text-gray-800"
                             }`}
                           >
-                            {t.status}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                            Ksh {t.totalAmount.toLocaleString()}
+                          </td>
+                          <td className="py-3">
+                            <span
+                              className={`px-3 py-1 rounded-full text-xs font-medium ${
+                                t.orderStatus === "Delivered"
+                                  ? "bg-green-100 text-green-700"
+                                  : "bg-yellow-100 text-yellow-700"
+                              }`}
+                            >
+                              {t.orderStatus === "Delivered"
+                                ? "Released"
+                                : "In Escrow"}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
               </div>
             </div>
           </section>
@@ -130,7 +148,6 @@ function SupplierWallet() {
           <aside className="lg:col-span-1">
             <div className="bg-white rounded-lg shadow-sm p-6 sticky top-8">
               <h4 className="font-semibold text-lg mb-4">Withdraw Funds</h4>
-
               <form onSubmit={handleWithdrawSubmit} className="space-y-4">
                 <div>
                   <label className="block text-xs text-gray-500 mb-1">
@@ -142,7 +159,6 @@ function SupplierWallet() {
                     className="w-full border border-gray-200 rounded-md px-3 py-2 text-sm"
                   />
                 </div>
-
                 <div>
                   <label className="block text-xs text-gray-500 mb-1">
                     Amount
@@ -159,7 +175,6 @@ function SupplierWallet() {
                     Available: Ksh {balances.available.toLocaleString()}
                   </div>
                 </div>
-
                 <button
                   type="submit"
                   className="w-full bg-green-500 hover:bg-green-600 text-white rounded-md py-2 font-medium disabled:bg-gray-300 disabled:cursor-not-allowed"
@@ -171,11 +186,10 @@ function SupplierWallet() {
                 >
                   Withdraw Now
                 </button>
-
                 <div className="mt-4 text-sm bg-green-50 border border-green-100 p-3 rounded-md text-green-700">
                   <strong className="block">Tip:</strong>
-                  M-Pesa withdrawals are processed instantly but may take up to
-                  5 minutes to reflect in your account.
+                  M-Pesa withdrawals are simulated and will not process a real
+                  payment.
                 </div>
               </form>
             </div>

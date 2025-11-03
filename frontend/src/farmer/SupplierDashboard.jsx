@@ -1,5 +1,4 @@
-// vendor/VendoDashboard.jsx
-import React, { useState, useEffect } from "react";
+import React, { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   CheckCircle,
@@ -11,9 +10,10 @@ import {
   Plus,
   ClipboardList,
   Trash2,
+  Loader2, // Import Loader
 } from "lucide-react";
 import Header from "../components/FarmerComponents/Header";
-import { useVendorData } from "../context/VendorDataContext";
+import { useFarmerData } from "../context/FarmerDataContext"; // <-- 1. MODIFIED IMPORT
 import { useAuth } from "../context/AuthContext";
 
 // Icon mapping
@@ -23,64 +23,37 @@ const iconComponents = {
   AlertTriangle: AlertTriangle,
   CheckCircle: CheckCircle,
   Clock: Clock,
+  order: Package,
+  payment: DollarSign,
+  system: AlertTriangle,
+  task: Package, // Added task type
 };
 
 const SupplierDashboard = () => {
+  // 2. MODIFIED: Use the new Farmer context
   const {
     dashboardData,
     notifications,
     handleWithdraw,
     markNotificationAsRead,
     deleteReadNotifications,
-  } = useVendorData();
+    loading, // Get loading state
+    error, // Get error state
+    unreadCount, // Get pre-calculated unread count
+  } = useFarmerData();
 
   const { user, loadingAuth } = useAuth();
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
   const navigate = useNavigate();
 
-  // Check authentication
-  useEffect(() => {
-    const userData = localStorage.getItem("user");
-    if (userData) {
-      const parsedUser = JSON.parse(userData);
-      if (parsedUser.role !== "farmer") {
-        navigate("/login");
-        return;
-      }
-      setUser(parsedUser);
-    } else {
-      console.log("Running in demo mode - no authenticated user");
-    }
-  }, [navigate]);
-
-  // Logout
-  const handleLogout = () => {
-    console.log("Simulating logout...");
-    localStorage.removeItem("user");
-    navigate("/login");
-  };
-
   // Quick Actions
-  const handleAddProduct = () => navigate("/vendorproducts");
-  const handleViewOrders = () => navigate("/ordermanagement");
+  const handleAddProduct = () => navigate("/supplierproducts");
+  const handleViewOrders = () => navigate("/supplierorders");
 
   // Withdraw funds
   const handleWithdrawFunds = () => {
-    const amount = dashboardData.earningsReleased;
-    if (amount <= 0) return;
-
-    const confirmed = window.confirm(
-      `CONFIRM WITHDRAWAL: Do you want to withdraw Ksh ${amount.toLocaleString()}? This is a simulation.`
-    );
-    if (!confirmed) return;
-
-    const success = handleWithdraw(amount, "254712345678");
-    if (success) {
-      console.log(
-        `Simulating successful withdrawal of Ksh ${amount.toLocaleString()}`
-      );
-    }
+    // This logic needs to be updated based on the new 'balances'
+    // For now, let's disable it as it's not fully implemented
+    alert("Withdrawal function not yet implemented in this context.");
   };
 
   // Delete read notifications
@@ -96,64 +69,59 @@ const SupplierDashboard = () => {
     deleteReadNotifications();
   };
 
+  // 3. MODIFIED: Notification Click Handler
+  const handleNotificationClick = async (notification) => {
+    if (!notification.isRead) {
+      await markNotificationAsRead(notification._id);
+    }
+
+    // Navigate to the correct page
+    if (notification.type === "order" || notification.type === "task") {
+      navigate("/supplierorders");
+    } else if (notification.type === "payment") {
+      navigate("/supplierwallet");
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       <Header
         avatarUrl={user?.avatar || ""}
         userName={user?.name || "Supplier"}
+        unreadCount={unreadCount} // Pass unread count
       />
 
       <main className="p-6">
-        {/* Error/Loading Banners */}
         {error && (
-          <div className="mb-6 bg-red-50 border border-red-200 rounded-lg p-4 flex items-center">
-            <span className="text-red-600 mr-2">⚠️</span>
+          <div className="mb-6 bg-red-50 border border-red-200 rounded-lg p-4">
             <span className="text-red-800">{error}</span>
-            <button
-              onClick={() => console.log("Simulating retry...")}
-              className="ml-auto text-red-600 hover:text-red-800 underline"
-            >
-              Retry
-            </button>
           </div>
         )}
 
         {loading && (
           <div className="mb-6 flex justify-center text-gray-600">
-            <svg
-              className="animate-spin w-5 h-5 mr-2"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-              />
-            </svg>
-            Loading dashboard data...
+            <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+            Updating live metrics...
           </div>
         )}
 
-        {/* Stats Cards */}
+        {/* 4. MODIFIED: Stats Cards now use 'dashboardData' from useFarmerData */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
           {[
             {
-              title: "Orders Received",
-              value: dashboardData.ordersReceived,
-              note: "+2 from yesterday",
+              title: "New Orders",
+              value: dashboardData.pendingAcceptance.toLocaleString(),
+              note: "Awaiting your acceptance",
             },
             {
-              title: "Pending Deliveries",
-              value: dashboardData.pendingDeliveries,
-              note: "Need attention",
+              title: "Active Deliveries",
+              value: dashboardData.pendingDeliveries.toLocaleString(),
+              note: "In fulfillment process",
             },
             {
               title: "Sales in Escrow",
               value: `Ksh ${dashboardData.salesInEscrow.toLocaleString()}`,
-              note: "Pending delivery confirmation",
+              note: "Funds held until delivery",
             },
             {
               title: "Earnings Released",
@@ -182,8 +150,7 @@ const SupplierDashboard = () => {
           <div className="flex flex-wrap gap-4">
             <button
               onClick={handleAddProduct}
-              className="flex items-center space-x-2 px-4 py-2 rounded-lg text-white font-medium shadow-sm hover:opacity-90 transition transform hover:scale-105"
-              style={{ backgroundColor: "#42cf17" }}
+              className="flex items-center space-x-2 bg-emerald-600 px-4 py-2 rounded-lg text-white font-medium shadow-sm hover:opacity-90 transition transform hover:scale-105"
             >
               <Plus className="w-5 h-5" />
               <span>Add New Product</span>
@@ -197,12 +164,8 @@ const SupplierDashboard = () => {
             </button>
             <button
               onClick={handleWithdrawFunds}
-              disabled={dashboardData.earningsReleased <= 0}
-              className={`flex items-center space-x-2 px-4 py-2 rounded-lg font-medium shadow-sm transition transform hover:scale-105 ${
-                dashboardData.earningsReleased > 0
-                  ? "bg-green-600 text-white hover:bg-green-700"
-                  : "bg-gray-200 text-gray-500 cursor-not-allowed"
-              }`}
+              disabled={true} // Re-enable when API is ready
+              className={`flex items-center space-x-2 px-4 py-2 rounded-lg font-medium shadow-sm transition transform hover:scale-105 bg-gray-200 text-gray-500 cursor-not-allowed`}
             >
               <DollarSign className="w-5 h-5" />
               <span>Withdraw Funds</span>
@@ -227,32 +190,36 @@ const SupplierDashboard = () => {
                 <span>Delete Read</span>
               </button>
               <span className="text-sm text-gray-500">
-                {notifications.filter((n) => !n.isRead).length} unread
+                {unreadCount} unread
               </span>
             </div>
           </div>
           <div className="space-y-4">
-            {notifications.length === 0 ? (
+            {notifications.length === 0 && !loading ? (
               <div className="text-gray-500 p-6 bg-white rounded-lg text-center border">
                 All caught up! No notifications to display.
               </div>
             ) : (
               notifications.map((notification) => {
-                const IconComponent = iconComponents[notification.icon];
+                const IconComponent =
+                  iconComponents[notification.type] ||
+                  iconComponents[notification.icon] ||
+                  Package;
                 return (
                   <div
-                    key={notification.id}
-                    className={`bg-white rounded-lg p-4 shadow-sm border border-gray-200 flex items-start space-x-4 transition ${
+                    key={notification._id}
+                    onClick={() => handleNotificationClick(notification)}
+                    className={`cursor-pointer bg-white rounded-lg p-4 shadow-sm border border-gray-200 flex items-start space-x-4 transition ${
                       notification.isRead
                         ? "opacity-70 border-l-4 border-l-gray-300"
-                        : "border-l-4 border-l-green-600 hover:shadow-lg"
+                        : "border-l-4 border-l-emerald-600 hover:shadow-lg"
                     }`}
                   >
                     <div
                       className={`w-8 h-8 flex items-center justify-center rounded-full flex-shrink-0 ${
                         notification.isRead
                           ? "bg-gray-100 text-gray-500"
-                          : "bg-green-100 text-green-600"
+                          : "bg-emerald-100 text-emerald-600"
                       }`}
                     >
                       <IconComponent className="w-5 h-5" />
@@ -281,20 +248,18 @@ const SupplierDashboard = () => {
                       </p>
                     </div>
 
-                    {!notification.isRead ? (
+                    {!notification.isRead && (
                       <button
-                        onClick={() => markNotificationAsRead(notification.id)}
-                        className="text-xs font-semibold text-green-600 hover:text-green-800 ml-4 flex items-center space-x-1 flex-shrink-0"
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          await markNotificationAsRead(notification._id);
+                        }}
+                        className="text-xs font-semibold text-emerald-600 hover:text-emerald-800 ml-4 flex items-center space-x-1 flex-shrink-0"
                         title="Mark as Read"
                       >
                         <CheckCircle className="w-4 h-4" />
                         <span>Mark Read</span>
                       </button>
-                    ) : (
-                      <X
-                        className="w-4 h-4 text-gray-400 ml-4 flex-shrink-0"
-                        title="Dismissed"
-                      />
                     )}
                   </div>
                 );
