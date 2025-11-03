@@ -8,7 +8,7 @@ import {
   getVendorOrders,
   updateOrderStatusAndNotifyRider,
   checkOrderStatus,
-  getTaskForVendor, // <-- IMPORT NEW FUNCTION
+  getTaskForVendor,
 } from "../controllers/order.controller.js";
 
 import {
@@ -32,7 +32,33 @@ import { getTotalEscrowBalance } from "../controllers/admin.controller.js";
 const router = express.Router();
 
 // ------------------------------------
-// 1. BUYER ROUTES
+// 1. NOTIFICATION MANAGEMENT ROUTES (MOVED TO TOP)
+// (These specific routes must come before general /:orderId)
+// ------------------------------------
+
+router.get(
+  "/notifications",
+  requireAuth,
+  requireRole(["buyer", "vendor", "rider", "admin", "farmer"]),
+  getNotifications
+);
+
+router.patch(
+  "/notifications/:id/read",
+  requireAuth,
+  requireRole(["vendor", "rider", "admin", "buyer", "farmer"]),
+  markNotificationAsReadDb
+);
+
+router.delete(
+  "/notifications/read",
+  requireAuth,
+  requireRole(["vendor", "rider", "admin", "buyer", "farmer"]),
+  deleteReadNotificationsDb
+);
+
+// ------------------------------------
+// 2. BUYER ROUTES
 // ------------------------------------
 router.post("/", requireAuth, requireRole(["buyer"]), placeOrder);
 router.get(
@@ -41,15 +67,9 @@ router.get(
   requireRole(["buyer", "admin"]),
   getBuyerOrders
 );
-router.get(
-  "/:orderId",
-  requireAuth,
-  requireRole(["buyer", "admin", "rider"]),
-  getOrderDetailsById
-);
 
 // ------------------------------------
-// 2. VENDOR SPECIFIC ROUTES (Order Management)
+// 3. VENDOR SPECIFIC ROUTES
 // ------------------------------------
 router.get(
   "/vendor/my-orders",
@@ -76,31 +96,6 @@ router.get(
   requireAuth,
   requireRole(["vendor"]),
   getTaskForVendor
-);
-
-// ------------------------------------
-// 3. NOTIFICATION MANAGEMENT ROUTES (NEW SECTION)
-// ------------------------------------
-
-router.get(
-  "/notifications",
-  requireAuth,
-  requireRole(["buyer", "vendor", "rider", "admin"]),
-  getNotifications
-);
-
-router.patch(
-  "/notifications/:id/read",
-  requireAuth,
-  requireRole(["vendor", "rider", "admin", "buyer"]),
-  markNotificationAsReadDb
-);
-
-router.delete(
-  "/notifications/read",
-  requireAuth,
-  requireRole(["vendor", "rider", "admin", "buyer"]),
-  deleteReadNotificationsDb
 );
 
 // ------------------------------------
@@ -161,6 +156,16 @@ router.get(
   requireAuth,
   requireRole(["admin"]),
   getTotalEscrowBalance
+);
+
+// ------------------------------------
+// 6. GENERAL (CATCH-ALL) ROUTES (MUST BE LAST)
+// ------------------------------------
+router.get(
+  "/:orderId",
+  requireAuth,
+  requireRole(["buyer", "admin", "rider", "vendor", "farmer"]),
+  getOrderDetailsById
 );
 
 export default router;
