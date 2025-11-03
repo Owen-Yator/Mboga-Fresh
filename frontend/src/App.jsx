@@ -39,9 +39,7 @@ import OrderManagement from "./vendor/OrderManagement.jsx";
 import VendorProducts from "./vendor/VendorProducts.jsx";
 import Farmily from "./vendor/Farmily.jsx"; // <-- This is now the main hub
 import VendorWallet from "./vendor/VendorWallet.jsx";
-// MODIFIED: These are no longer separate pages
-// import BulkOrdersList from "./vendor/BulkOrdersList.jsx";
-// import VendorCartPage from "./vendor/VendorCartPage.jsx";
+import VendorOrderPlaced from "./vendor/VendorOrderPlaced.jsx";
 import VendorCheckout from "./vendor/VendorCheckout.jsx";
 
 // Rider pages
@@ -135,6 +133,10 @@ function App() {
                 <Route path="/vendorwallet" element={<VendorWallet />} />
                 <Route path="/vendorprofile" element={<Vendorprofile />} />
                 <Route path="/vendor-checkout" element={<VendorCheckout />} />
+                <Route
+                  path="/vendor-order-placed"
+                  element={<VendorOrderPlaced />}
+                />
 
                 {/* MODIFIED: Removed these routes */}
                 {/* <Route path="/bulkorders" element={<BulkOrdersList />} /> */}

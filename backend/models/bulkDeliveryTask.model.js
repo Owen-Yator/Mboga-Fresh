@@ -1,23 +1,24 @@
 import mongoose from "mongoose";
 
-const DeliveryTaskSchema = new mongoose.Schema(
+const BulkDeliveryTaskSchema = new mongoose.Schema(
   {
-    // B2C order (Buyer -> Vendor)
-    order: {
+    // B2B order (Vendor -> Farmer)
+    bulkOrder: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Order",
+      ref: "BulkOrder",
       required: true,
-      unique: true, // This is now safe, as it will never be null
+      unique: true, // One task per bulk order
     },
 
-    vendor: {
+    // The SELLER (the Farmer)
+    seller: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
     },
 
-    // The RIDER
-    rider: {
+    // The DRIVER (Truck, etc. - can still be a "rider" role for now)
+    driver: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       default: null,
@@ -26,7 +27,7 @@ const DeliveryTaskSchema = new mongoose.Schema(
     status: {
       type: String,
       enum: [
-        "Awaiting Acceptance",
+        "Awaiting Acceptance", // Waiting for a driver
         "Accepted/Awaiting Pickup",
         "In Transit",
         "Delivered",
@@ -38,7 +39,8 @@ const DeliveryTaskSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
-    buyerConfirmationCode: {
+    // The VENDOR (Buyer) confirmation code
+    vendorConfirmationCode: {
       type: String,
       required: true,
     },
@@ -48,7 +50,7 @@ const DeliveryTaskSchema = new mongoose.Schema(
     },
     deliveryFee: {
       type: Number,
-      default: 210,
+      default: 500, // Maybe bulk orders have a higher fee
     },
   },
   {
@@ -56,11 +58,11 @@ const DeliveryTaskSchema = new mongoose.Schema(
   }
 );
 
-// Index to quickly find tasks assigned to a specific rider
-DeliveryTaskSchema.index({ rider: 1, status: 1 });
-DeliveryTaskSchema.index({ vendor: 1, status: 1 }); // Index the vendor
+BulkDeliveryTaskSchema.index({ driver: 1, status: 1 });
+BulkDeliveryTaskSchema.index({ seller: 1, status: 1 });
 
-// The sparse indexes for bulkOrder are no longer needed
-
-const DeliveryTask = mongoose.model("DeliveryTask", DeliveryTaskSchema);
-export default DeliveryTask;
+const BulkDeliveryTask = mongoose.model(
+  "BulkDeliveryTask",
+  BulkDeliveryTaskSchema
+);
+export default BulkDeliveryTask;

@@ -51,9 +51,10 @@ const Sidebar = ({ className = "" }) => {
           <button
             key="all"
             onClick={() => goToCategory("all")}
-            className={linkClass({
-              isActive: activeView === "products" && activeCategory === "all",
-            })}
+            // MODIFIED: Pass the boolean directly
+            className={linkClass(
+              activeView === "products" && activeCategory === "all"
+            )}
           >
             <span className="material-symbols-outlined" aria-hidden>
               grid_view
@@ -68,7 +69,8 @@ const Sidebar = ({ className = "" }) => {
               <button
                 key={c.id}
                 onClick={() => goToCategory(c.id)}
-                className={linkClass({ isActive })}
+                // MODIFIED: Pass the boolean directly
+                className={linkClass(isActive)}
                 aria-current={isActive ? "true" : undefined}
               >
                 {c.icon && (
@@ -89,19 +91,19 @@ const Sidebar = ({ className = "" }) => {
             MANAGE ORDERS & CART
           </span>
 
-          {/* MODIFIED: Use <button> and setView */}
           <button
             onClick={() => setView("cart")}
-            className={linkClass({ isActive: activeView === "cart" })}
+            // MODIFIED: Pass the boolean directly
+            className={linkClass(activeView === "cart")}
           >
             <span className="material-symbols-outlined">shopping_cart</span>
             <span>My Bulk Cart</span>
           </button>
 
-          {/* MODIFIED: Use <button> and setView */}
           <button
             onClick={() => setView("orders")}
-            className={linkClass({ isActive: activeView === "orders" })}
+            // MODIFIED: Pass the boolean directly
+            className={linkClass(activeView === "orders")}
           >
             <span className="material-symbols-outlined">receipt_long</span>
             <span>Bulk Orders</span>

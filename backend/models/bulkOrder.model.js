@@ -16,13 +16,11 @@ const orderItemSchema = new mongoose.Schema({
 
 const bulkOrderSchema = new mongoose.Schema(
   {
-    // The VENDOR who is BUYING
     vendorId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
     },
-    // The FARMER who is SELLING
     farmerId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
@@ -41,7 +39,7 @@ const bulkOrderSchema = new mongoose.Schema(
     },
     orderStatus: {
       type: String,
-      enum: ["Pending", "Confirmed", "In Transit", "Delivered", "Cancelled"],
+      enum: ["Pending", "QR Scanning", "In Transit", "Delivered", "Cancelled"],
       default: "Pending",
     },
     paymentStatus: {
@@ -53,6 +51,12 @@ const bulkOrderSchema = new mongoose.Schema(
       mpesaPhone: { type: String },
       checkoutRequestId: { type: String },
       paymentFailureReason: { type: String },
+    },
+    // --- MODIFIED THIS FIELD ---
+    task: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "BulkDeliveryTask", // <-- Points to the NEW model
+      default: null,
     },
   },
   { timestamps: true }

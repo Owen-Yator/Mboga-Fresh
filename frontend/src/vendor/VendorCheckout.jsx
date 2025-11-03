@@ -4,9 +4,8 @@ import Sidebar from "../components/vendorComponents/Sidebar";
 import CheckoutProgress from "../components/CheckoutProgress";
 import { useBulkCart } from "../context/BulkCartContext";
 import { useNavigate } from "react-router-dom";
-// MODIFIED: Import from the new bulkOrders API
 import { placeBulkOrderRequest } from "../api/bulkOrders";
-// import { checkPaymentStatus } from "../api/bulkOrders"; // We will use this when payment is real
+// import { checkPaymentStatus } from "../api/bulkOrders";
 import { useAuth } from "../context/AuthContext";
 import axios from "axios";
 
@@ -20,7 +19,7 @@ const VendorCheckout = () => {
   const [lastMpesaError, setLastMpesaError] = useState(null);
 
   const SHIPPING_FEE = 1;
-  const TOTAL_AMOUNT = subtotal + SHIPPING_FEE; // Calculate total
+  const TOTAL_AMOUNT = subtotal + SHIPPING_FEE;
 
   const [paymentPhone, setPaymentPhone] = useState(user?.phone || "");
   const [addressForm, setAddressForm] = useState({
@@ -106,7 +105,6 @@ const VendorCheckout = () => {
     setLastMpesaError(null);
 
     const payload = {
-      // MODIFIED: Send the correct item structure for the new model
       items: items.map((item) => ({
         product: item.id,
         quantity: item.qty,
@@ -120,12 +118,11 @@ const VendorCheckout = () => {
         country: addressForm.country,
       },
       mpesaPhone: mpesaPhoneNumber,
-      totalAmount: TOTAL_AMOUNT, // Send the calculated total
+      totalAmount: TOTAL_AMOUNT,
     };
 
     try {
       if (!primaryAddress && user) {
-        // (This logic to save address is good, no change needed)
         const newPrimaryAddressPayload = {
           addresses: [
             {
@@ -145,21 +142,17 @@ const VendorCheckout = () => {
         await refresh();
       }
 
-      // MODIFIED: Use the new bulk order function
       const result = await placeBulkOrderRequest(payload);
       const orderId = result.orderId;
 
-      // TODO: Implement STK push and payment polling here
-      // For now, we simulate success
       console.log("Simulating STK Push...");
-      await new Promise((r) => setTimeout(r, 2000)); // Simulate payment delay
-
-      const paymentComplete = true; // Assume success for now
+      await new Promise((r) => setTimeout(r, 2000));
+      const paymentComplete = true;
 
       if (paymentComplete) {
         clearCart();
-        navigate("/order-placed", {
-          // This route needs to be for vendors too
+        // MODIFIED: Navigate to the new vendor order placed page
+        navigate("/vendor-order-placed", {
           state: {
             orderNumber: orderId,
             eta: "2-4 days (bulk)",
@@ -182,7 +175,7 @@ const VendorCheckout = () => {
   };
 
   if (!items || items.length === 0) {
-    // ... (empty cart component, no changes) ...
+    // ... (empty cart component)
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
         <Header avatarUrl={user?.avatar} userName={user?.name || "Vendor"} />

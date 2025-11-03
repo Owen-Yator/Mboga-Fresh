@@ -3,109 +3,243 @@ import DeliveryTask from "../models/deliveryTask.model.js";
 import Notification from "../models/notification.model.js";
 import { User } from "../models/user.model.js";
 import mongoose from "mongoose";
+import BulkOrder from "../models/bulkOrder.model.js";
+import BulkDeliveryTask from "../models/bulkDeliveryTask.model.js"; // Import Bulk Task Model
 
 // --- NOTIFICATION HELPER ---
-const createDbNotification = async (recipientId, orderId, message) => {
-  const newNotification = new Notification({
-    recipient: recipientId,
-    type: "order",
-    title: `Order Alert: #${orderId.toString().substring(18).toUpperCase()}`,
-    message: message,
-    relatedId: orderId,
-  });
-  await newNotification.save();
+const createDbNotification = async (
+  recipientId,
+  relatedId,
+  message,
+  type = "order",
+  title = "Order Alert"
+) => {
+  try {
+    const newNotification = new Notification({
+      recipient: recipientId,
+      type: type,
+      title: title,
+      message: message,
+      relatedId: relatedId,
+    });
+    await newNotification.save();
+  } catch (error) {
+    console.error("Failed to create DB notification:", error);
+  }
 };
 // -----------------------------------------------------------------
 
 // --- HELPER: Notifies all Riders of a new task ---
-const notifyAllAvailableRiders = async (taskId, vendorInfo) => {
+export const notifyAllAvailableRiders = async (taskId, sellerProfile) => {
   try {
-    // Fetch all riders regardless of status
-    const riders = await User.find({ role: "rider" }).select("_id");
-
+    const riders = await User.find({ role: "rider", status: "active" }).select(
+      "_id"
+    );
     if (riders.length === 0)
       return console.log("No riders found in the User collection.");
 
-    const notificationPromises = riders.map((rider) => {
-      return createDbNotification(
-        rider._id, // Recipient is the Rider's ID
-        taskId, // Pass Task ID
-        `New Delivery Task available! Pickup from ${vendorInfo}.`
-      );
-    });
-    await Promise.all(notificationPromises);
-    console.log(`Notified ${riders.length} riders of new task ${taskId}.`);
+    const sellerName =
+      sellerProfile?.farmName || sellerProfile?.businessName || "a seller";
+
+    const notifications = riders.map((rider) => ({
+      recipient: rider._id,
+      type: "task",
+      title: "New Delivery Task Available",
+      message: `A new delivery from ${sellerName} is available for pickup.`,
+      relatedId: taskId,
+    }));
+
+    if (notifications.length > 0) {
+      await Notification.insertMany(notifications);
+    }
+    console.log(
+      `Notified ${notifications.length} riders of new task ${taskId}.`
+    );
   } catch (error) {
     console.error("Error notifying riders:", error);
   }
 };
 // ------------------------------------------------------------------
 
-const fetchAllAvailableTasks = async (req, res) => {
+export const fetchAllAvailableTasks = async (req, res) => {
   try {
-    // CRITICAL FIX: Status must be "Awaiting Acceptance"
-    const tasks = await DeliveryTask.find({ status: "Awaiting Acceptance" })
+    const b2cTasks = await DeliveryTask.find({ status: "Awaiting Acceptance" })
       .populate("vendor", "name businessName")
       .populate("order", "totalAmount")
       .sort({ createdAt: 1 })
       .lean();
 
-    res.json(
-      tasks.map((task) => ({
-        id: task._id,
-        orderId: task.order._id,
-        totalAmount: task.order.totalAmount,
-        vendorName: task.vendor.businessName || task.vendor.name,
-        pickupAddress:
-          task.deliveryAddress.street + ", " + task.deliveryAddress.city,
-        deliveryFee: task.deliveryFee,
-        createdAt: task.createdAt,
-      }))
+    const b2bTasks = await BulkDeliveryTask.find({
+      status: "Awaiting Acceptance",
+    })
+      .populate("seller", "name farmName")
+      .populate("bulkOrder", "totalAmount")
+      .sort({ createdAt: 1 })
+      .lean();
+
+    // Map B2C tasks
+    const mappedB2CTasks = b2cTasks
+      .map((task) => {
+        const orderData = task.order;
+        // --- THIS IS THE FIX ---
+        // If the task has no order or no seller, filter it out.
+        if (!orderData || !task.vendor) return null;
+        // --- END OF FIX ---
+
+        return {
+          id: task._id,
+          orderId: orderData._id,
+          totalAmount: orderData.totalAmount,
+          vendorName: task.vendor.businessName || task.vendor.name,
+          pickupAddress:
+            task.deliveryAddress.street + ", " + task.deliveryAddress.city,
+          deliveryFee: task.deliveryFee,
+          createdAt: task.createdAt,
+          type: "B2C",
+        };
+      })
+      .filter(Boolean); // Remove any null tasks
+
+    // Map B2B tasks
+    const mappedB2BTasks = b2bTasks
+      .map((task) => {
+        const orderData = task.bulkOrder;
+        // --- THIS IS THE FIX ---
+        // If the task has no order or no seller, filter it out.
+        if (!orderData || !task.seller) return null;
+        // --- END OF FIX ---
+
+        return {
+          id: task._id,
+          orderId: orderData._id,
+          totalAmount: orderData.totalAmount,
+          vendorName: task.seller.farmName || task.seller.name,
+          pickupAddress:
+            task.deliveryAddress.street + ", " + task.deliveryAddress.city,
+          deliveryFee: task.deliveryFee,
+          createdAt: task.createdAt,
+          type: "B2B",
+        };
+      })
+      .filter(Boolean); // Remove any null tasks
+
+    const allTasks = [...mappedB2CTasks, ...mappedB2BTasks].sort(
+      (a, b) => new Date(a.createdAt) - new Date(b.createdAt)
     );
+
+    res.json(allTasks);
   } catch (error) {
     console.error("Error fetching available tasks:", error);
     res.status(500).json({ message: "Failed to fetch available tasks." });
   }
 };
 
-const fetchRiderAcceptedTasks = async (req, res) => {
+export const fetchRiderAcceptedTasks = async (req, res) => {
   const riderId = req.user._id;
 
   try {
-    const tasks = await DeliveryTask.find({
+    const b2cTasks = await DeliveryTask.find({
       rider: riderId,
       status: { $in: ["Accepted/Awaiting Pickup", "In Transit"] },
     })
       .populate("vendor", "name businessName")
-      .populate("order", "totalAmount")
+      .populate({
+        path: "order",
+        select: "shippingAddress totalAmount user",
+        populate: { path: "user", select: "name phone" },
+      })
       .sort({ createdAt: -1 })
       .lean();
 
-    res.json(
-      tasks.map((task) => ({
-        id: task._id,
-        orderId: task.order._id,
-        totalAmount: task.order.totalAmount,
-        vendorName: task.vendor.businessName || task.vendor.name,
-        pickupAddress:
-          task.deliveryAddress.street + ", " + task.deliveryAddress.city,
-        deliveryAddress:
-          task.deliveryAddress.street + ", " + task.deliveryAddress.city,
-        deliveryFee: task.deliveryFee,
-        createdAt: task.createdAt,
-        status: task.status,
-        pickupCode: task.pickupCode,
-        isAssigned: true,
-        buyerConfirmationCode: task.buyerConfirmationCode,
-      }))
+    const b2bTasks = await BulkDeliveryTask.find({
+      driver: riderId,
+      status: { $in: ["Accepted/Awaiting Pickup", "In Transit"] },
+    })
+      .populate("seller", "name farmName")
+      .populate({
+        path: "bulkOrder",
+        select: "shippingAddress totalAmount vendorId",
+        populate: { path: "vendorId", select: "name phone" },
+      })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    // Map B2C
+    const mappedB2CTasks = b2cTasks
+      .map((task) => {
+        const orderData = task.order;
+        // --- THIS IS THE FIX ---
+        if (!orderData || !task.vendor) return null;
+        // --- END OF FIX ---
+        const buyerData = orderData.user;
+        return {
+          id: task._id,
+          orderId: orderData._id,
+          totalAmount: orderData.totalAmount,
+          vendorName: task.vendor.businessName || task.vendor.name,
+          pickupAddress:
+            "Pickup from " + (task.vendor.businessName || task.vendor.name),
+          deliveryAddress:
+            orderData.shippingAddress.street +
+            ", " +
+            orderData.shippingAddress.city,
+          buyerName: buyerData?.name || "Unknown",
+          buyerPhone: buyerData?.phone || "N/A",
+          deliveryFee: task.deliveryFee,
+          createdAt: task.createdAt,
+          status: task.status,
+          pickupCode: task.pickupCode,
+          isAssigned: true,
+          buyerConfirmationCode: task.buyerConfirmationCode,
+          type: "B2C",
+        };
+      })
+      .filter(Boolean); // Remove nulls
+
+    // Map B2B
+    const mappedB2BTasks = b2bTasks
+      .map((task) => {
+        const orderData = task.bulkOrder;
+        // --- THIS IS THE FIX ---
+        if (!orderData || !task.seller) return null;
+        // --- END OF FIX ---
+        const buyerData = orderData.vendorId;
+        return {
+          id: task._id,
+          orderId: orderData._id,
+          totalAmount: orderData.totalAmount,
+          vendorName: task.seller.farmName || task.seller.name,
+          pickupAddress:
+            "Pickup from " + (task.seller.farmName || task.seller.name),
+          deliveryAddress:
+            orderData.shippingAddress.street +
+            ", " +
+            orderData.shippingAddress.city,
+          buyerName: buyerData?.name || "Unknown",
+          buyerPhone: buyerData?.phone || "N/A",
+          deliveryFee: task.deliveryFee,
+          createdAt: task.createdAt,
+          status: task.status,
+          pickupCode: task.pickupCode,
+          isAssigned: true,
+          buyerConfirmationCode: task.vendorConfirmationCode,
+          type: "B2B",
+        };
+      })
+      .filter(Boolean); // Remove nulls
+
+    const allTasks = [...mappedB2CTasks, ...mappedB2BTasks].sort(
+      (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
     );
+
+    res.json(allTasks);
   } catch (error) {
     console.error("Error fetching accepted tasks:", error);
     res.status(500).json({ message: "Failed to fetch accepted tasks." });
   }
 };
 
-const acceptDeliveryTask = async (req, res) => {
+export const acceptDeliveryTask = async (req, res) => {
   const { taskId } = req.params;
   const riderId = req.user._id;
 
@@ -114,11 +248,24 @@ const acceptDeliveryTask = async (req, res) => {
       return res.status(400).json({ message: "Invalid Task ID format." });
     }
 
-    const task = await DeliveryTask.findOneAndUpdate(
+    let task = await DeliveryTask.findOneAndUpdate(
       { _id: taskId, status: "Awaiting Acceptance", rider: null },
       { $set: { rider: riderId, status: "Accepted/Awaiting Pickup" } },
       { new: true }
     );
+
+    let orderId = task?.order;
+    let sellerId = task?.vendor; // B2C uses 'vendor' field
+
+    if (!task) {
+      task = await BulkDeliveryTask.findOneAndUpdate(
+        { _id: taskId, status: "Awaiting Acceptance", driver: null },
+        { $set: { driver: riderId, status: "Accepted/Awaiting Pickup" } },
+        { new: true }
+      );
+      orderId = task?.bulkOrder;
+      sellerId = task?.seller; // B2B uses 'seller' field
+    }
 
     if (!task) {
       return res
@@ -127,12 +274,11 @@ const acceptDeliveryTask = async (req, res) => {
     }
 
     await createDbNotification(
-      task.vendor,
-      task.order,
-      `Rider has accepted task for Order #${task.order
-        .toString()
-        .substring(18)
-        .toUpperCase()}.`
+      sellerId,
+      orderId,
+      `Rider ${req.user.name} has accepted your task and is en route for pickup.`,
+      "task",
+      "Rider Accepted Task"
     );
 
     res.json({ message: "Task accepted successfully. Proceed to pickup." });
@@ -142,7 +288,7 @@ const acceptDeliveryTask = async (req, res) => {
   }
 };
 
-const confirmPickupByRider = async (req, res) => {
+export const confirmPickupByRider = async (req, res) => {
   const { orderId, pickupCode } = req.body;
   const riderId = req.user._id;
 
@@ -151,8 +297,7 @@ const confirmPickupByRider = async (req, res) => {
       return res.status(400).json({ message: "Invalid Order ID format." });
     }
 
-    // Verification via Pickup Code and Rider ID
-    const task = await DeliveryTask.findOneAndUpdate(
+    let task = await DeliveryTask.findOneAndUpdate(
       {
         order: orderId,
         rider: riderId,
@@ -164,17 +309,38 @@ const confirmPickupByRider = async (req, res) => {
     );
 
     if (!task) {
+      task = await BulkDeliveryTask.findOneAndUpdate(
+        {
+          bulkOrder: orderId,
+          driver: riderId,
+          pickupCode: pickupCode,
+          status: "Accepted/Awaiting Pickup",
+        },
+        { $set: { status: "In Transit" } },
+        { new: true }
+      );
+    }
+
+    if (!task) {
       return res.status(401).json({
         message: "Invalid scan, code, or task is not ready for pickup.",
       });
     }
 
-    await Order.findByIdAndUpdate(orderId, { orderStatus: "In Delivery" });
+    if (task.order) {
+      await Order.findByIdAndUpdate(task.order, { orderStatus: "In Delivery" });
+    } else if (task.bulkOrder) {
+      await BulkOrder.findByIdAndUpdate(task.bulkOrder, {
+        orderStatus: "In Transit",
+      });
+    }
 
     await createDbNotification(
-      task.vendor,
-      orderId,
-      `Order picked up! Status: In Delivery.`
+      task.vendor || task.seller, // Use vendor (B2C) or seller (B2B)
+      task.order || task.bulkOrder,
+      `Order picked up! Status: In Delivery.`,
+      "task",
+      "Order Picked Up"
     );
 
     res.json({ message: "Pickup confirmed. Delivery is now in transit." });
@@ -184,7 +350,7 @@ const confirmPickupByRider = async (req, res) => {
   }
 };
 
-const confirmDeliveryByRider = async (req, res) => {
+export const confirmDeliveryByRider = async (req, res) => {
   const { orderId, buyerCode } = req.body;
   const riderId = req.user._id;
 
@@ -193,8 +359,7 @@ const confirmDeliveryByRider = async (req, res) => {
       return res.status(400).json({ message: "Invalid Order ID format." });
     }
 
-    // Verification via Buyer Code and Rider ID
-    const task = await DeliveryTask.findOneAndUpdate(
+    let task = await DeliveryTask.findOneAndUpdate(
       {
         order: orderId,
         rider: riderId,
@@ -206,20 +371,45 @@ const confirmDeliveryByRider = async (req, res) => {
     );
 
     if (!task) {
-      return res
-        .status(401)
-        .json({ message: "Invalid Buyer Code or task not in transit." });
+      task = await BulkDeliveryTask.findOneAndUpdate(
+        {
+          bulkOrder: orderId,
+          driver: riderId,
+          vendorConfirmationCode: buyerCode,
+          status: "In Transit",
+        },
+        { $set: { status: "Delivered" } },
+        { new: true }
+      );
     }
 
-    await Order.findByIdAndUpdate(orderId, { orderStatus: "Delivered" });
+    if (!task) {
+      return res
+        .status(401)
+        .json({ message: "Invalid Confirmation Code or task not in transit." });
+    }
+
+    if (task.order) {
+      await Order.findByIdAndUpdate(task.order, {
+        orderStatus: "Delivered",
+        paymentStatus: "Paid",
+      });
+    } else if (task.bulkOrder) {
+      await BulkOrder.findByIdAndUpdate(task.bulkOrder, {
+        orderStatus: "Delivered",
+        paymentStatus: "Paid",
+      });
+    }
 
     await createDbNotification(
-      task.vendor,
-      orderId,
+      task.vendor || task.seller, // Use vendor (B2C) or seller (B2B)
+      task.order || task.bulkOrder,
       `Order completed! Escrow funds released for order #${orderId
         .toString()
         .substring(18)
-        .toUpperCase()}.`
+        .toUpperCase()}.`,
+      "payment",
+      "Order Delivered & Paid"
     );
 
     res.json({ message: "Delivery confirmed. Escrow funds released." });
@@ -229,33 +419,39 @@ const confirmDeliveryByRider = async (req, res) => {
   }
 };
 
-const getRiderEarningsAndHistory = async (req, res) => {
+export const getRiderEarningsAndHistory = async (req, res) => {
   const riderId = req.user._id;
 
   try {
-    // Find all tasks completed by the current rider
-    const completedTasks = await DeliveryTask.find({
+    const b2cTasks = await DeliveryTask.find({
       rider: riderId,
       status: "Delivered",
     })
-      .populate("order", "totalAmount")
-      .sort({ createdAt: -1 })
+      .select("deliveryFee createdAt")
       .lean();
 
-    // Calculate total lifetime earnings
-    const totalEarnings = completedTasks.reduce((sum, task) => {
-      const earning = task.deliveryFee || 0;
-      return sum + earning;
-    }, 0);
+    const b2bTasks = await BulkDeliveryTask.find({
+      driver: riderId,
+      status: "Delivered",
+    })
+      .select("deliveryFee createdAt")
+      .lean();
 
-    // Return summary stats and the list of recent tasks
+    const allTasks = [...b2cTasks, ...b2bTasks];
+
+    const totalEarnings = allTasks.reduce(
+      (sum, task) => sum + (task.deliveryFee || 0),
+      0
+    );
+
+    allTasks.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
     res.json({
       totalEarnings: totalEarnings,
-      completedCount: completedTasks.length,
-      recentDeliveries: completedTasks.slice(0, 5).map((task) => ({
-        id: task.order._id,
-        customer: task.deliveryAddress.street || task.order._id.substring(18),
-        location: task.deliveryAddress.city,
+      completedCount: allTasks.length,
+      recentDeliveries: allTasks.slice(0, 5).map((task) => ({
+        id: task._id,
+        orderId: task.order || task.bulkOrder,
         earnings: task.deliveryFee,
         status: "Delivered",
         date: task.createdAt,
@@ -267,7 +463,7 @@ const getRiderEarningsAndHistory = async (req, res) => {
   }
 };
 
-const getVendorNotifications = async (req, res) => {
+export const getVendorNotifications = async (req, res) => {
   try {
     const notifications = await Notification.find({ recipient: req.user._id })
       .sort({ createdAt: -1 })
@@ -289,16 +485,4 @@ const getVendorNotifications = async (req, res) => {
     console.error("Error fetching vendor notifications:", error);
     res.status(500).json({ message: "Failed to fetch notifications." });
   }
-};
-
-// --- FINAL EXPORTS (Must match function names above) ---
-export {
-  fetchAllAvailableTasks,
-  fetchRiderAcceptedTasks,
-  acceptDeliveryTask,
-  confirmPickupByRider,
-  confirmDeliveryByRider,
-  getRiderEarningsAndHistory,
-  getVendorNotifications,
-  notifyAllAvailableRiders,
 };
