@@ -1,4 +1,6 @@
 import BulkProduct from "../models/bulkProduct.model.js";
+import FarmerProfile from "../models/farmerProfile.model.js"; 
+import { User } from "../models/user.model.js";
 import fs from "fs";
 import path from "path";
 import Joi from "joi";
@@ -9,6 +11,11 @@ const removeFile = (filePath) => {
   fs.unlink(full, (err) => {});
 };
 
+function escapeRegex(str = "") {
+  return String(str).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+// 3. (UNCHANGED) Schemas for validation
 const createSchema = Joi.object({
   name: Joi.string().min(2).required(),
   category: Joi.string().required(),
@@ -19,7 +26,6 @@ const createSchema = Joi.object({
   description: Joi.string().allow("").optional(),
   vendorAssignedId: Joi.string().allow("").optional(),
 });
-
 const updateSchema = Joi.object({
   name: Joi.string().min(2).optional(),
   category: Joi.string().optional(),
@@ -30,58 +36,133 @@ const updateSchema = Joi.object({
   description: Joi.string().allow("").optional(),
   vendorAssignedId: Joi.string().allow("").optional(),
 });
-
 function firstUploadedFile(req) {
   if (req.file) return req.file;
   if (Array.isArray(req.files) && req.files.length > 0) return req.files[0];
   return null;
 }
 
-// list bulk products: supports ?ownerId=...&q=...&limit=&skip=
+// 4. (UNCHANGED) Helper function to get Farm Name
+// We'll use this in the 'list' function
+async function getFarmerData(ownerId) {
+  try {
+    const profile = await FarmerProfile.findOne({ user: ownerId })
+      .select("farmName")
+      .lean();
+    if (profile) return profile.farmName;
+
+    // Fallback if no profile, just get user name
+    const user = await User.findById(ownerId).select("name").lean();
+    return user ? user.name : "Unknown Farmer";
+  } catch (error) {
+    console.error("Error fetching farmer data:", error);
+    return "Unknown Farmer";
+  }
+}
+
+// 5. (MODIFIED) Upgraded 'list' function
 export const list = async (req, res) => {
   try {
-    const { ownerId, q, limit = 50, skip = 0 } = req.query;
+    const {
+      ownerId,
+      q,
+      limit = 12, // Default to 12
+      page = 1,
+      category, // Added
+      sortBy, // Added
+    } = req.query;
+
+    const limitNum = Number(limit);
+    const pageNum = Number(page);
+    const skipNum = (pageNum - 1) * limitNum;
+
     const filter = {};
     if (ownerId) filter.ownerId = ownerId;
     if (q) {
-      filter.$or = [
-        { name: new RegExp(q, "i") },
-        { category: new RegExp(q, "i") },
-      ];
+      const re = new RegExp(String(q), "i");
+      filter.$or = [{ name: re }, { category: re }];
     }
 
-    // populate ownerId with only the name field
-    const items = await BulkProduct.find(filter)
-      .sort({ createdAt: -1 })
-      .skip(Number(skip))
-      .limit(Math.min(1000, Number(limit)))
-      .populate("ownerId", "name"); // <--- populate owner name
+    // Add category filter (case-insensitive)
+    if (category && category !== "All Categories") {
+      filter.category = new RegExp(`^${escapeRegex(category)}$`, "i");
+    }
 
-    // convert mongoose docs to plain objects and add ownerName convenience field
-    const payload = items.map((doc) => {
-      const obj = doc.toObject ? doc.toObject() : doc;
-      obj.ownerName =
-        obj.ownerId && obj.ownerId.name ? obj.ownerId.name : undefined;
-      return obj;
+    let sort = { createdAt: -1 };
+    if (sortBy === "price-asc") {
+      sort = { price: 1 };
+    } else if (sortBy === "price-desc") {
+      sort = { price: -1 };
+    }
+
+    let products;
+    let totalProducts = 0;
+
+    try {
+      [totalProducts, products] = await Promise.all([
+        BulkProduct.countDocuments(filter),
+        BulkProduct.find(filter)
+          .sort(sort)
+          .skip(skipNum)
+          .limit(limitNum)
+          .populate("ownerId", "name avatar") // Get owner's name and avatar
+          .lean(), // Use lean for faster queries
+      ]);
+    } catch (dbErr) {
+      console.error("DB query failed in bulkProducts.list:", dbErr);
+      return res.status(500).json({ message: "Failed to fetch bulk products" });
+    }
+
+    const totalPages = Math.ceil(totalProducts / limitNum) || 1;
+
+    // 6. (MODIFIED) Efficiently enrich products with 'farmName'
+    const farmerProfiles = await FarmerProfile.find({
+      user: { $in: products.map((p) => p.ownerId._id) },
+    })
+      .select("user farmName")
+      .lean();
+
+    const profileMap = new Map(
+      farmerProfiles.map((p) => [String(p.user), p.farmName])
+    );
+
+    const enrichedProducts = products.map((product) => {
+      const ownerName = product.ownerId?.name || "Unknown";
+      const farmName = profileMap.get(String(product.ownerId._id));
+
+      return {
+        ...product,
+        // Use farmName if it exists, otherwise fall back to personal name
+        ownerName: farmName || ownerName,
+      };
     });
 
-    res.json(payload);
+    res.json({
+      products: enrichedProducts,
+      totalPages,
+      currentPage: pageNum,
+      totalProducts,
+    });
   } catch (err) {
     console.error("bulk list error:", err);
     res.status(500).json({ message: "Failed to fetch bulk products" });
   }
 };
 
+// ... (getOne, createOne, updateOne, removeOne are unchanged) ...
 export const getOne = async (req, res) => {
   try {
     const p = await BulkProduct.findById(req.params.id)
       .populate("ownerId", "name")
       .lean();
     if (!p) return res.status(404).json({ message: "Bulk product not found" });
-    // attach ownerName convenience field
+
+    const farmName = await getFarmerData(p.ownerId._id);
+
     const payload = {
       ...p,
-      ownerName: p.ownerId && p.ownerId.name ? p.ownerId.name : undefined,
+      ownerName:
+        farmName || (p.ownerId && p.ownerId.name ? p.ownerId.name : undefined),
     };
     res.json(payload);
   } catch (err) {
@@ -90,7 +171,6 @@ export const getOne = async (req, res) => {
   }
 };
 
-// create: requires authentication; owner set from req.user
 export const createOne = async (req, res) => {
   try {
     if (!req.user)
@@ -126,7 +206,6 @@ export const createOne = async (req, res) => {
   }
 };
 
-// update: only owner or admin may update
 export const updateOne = async (req, res) => {
   try {
     const product = await BulkProduct.findById(req.params.id);

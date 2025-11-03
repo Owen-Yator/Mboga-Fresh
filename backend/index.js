@@ -13,6 +13,7 @@ import userRoutes from "./routes/user.route.js";
 import orderRouter from "./routes/order.route.js";
 import paymentRouter from "./routes/payment.route.js";
 import vendorRoutes from "./routes/vendor.routes.js";
+import bulkOrderRoutes from "./routes/bulkOrder.route.js";
 
 dotenv.config();
 
@@ -52,6 +53,7 @@ app.use("/api/orders", orderRouter);
 app.use("/api/admin", userRoutes);
 app.use("/api/payments", paymentRouter);
 app.use("/api/vendors", vendorRoutes);
+app.use("/api/bulk-orders", bulkOrderRoutes);
 
 // Connect DB and start server
 connectDB()
