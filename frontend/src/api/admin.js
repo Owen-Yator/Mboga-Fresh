@@ -32,3 +32,15 @@ export const updateProductStatus = async (id, type, isSuspended) => {
   );
   return response.data;
 };
+
+/**
+ * Fetches all analytics data for the dashboard
+ * @param {string} period 'daily', 'weekly', or 'monthly'
+ */
+export const fetchAnalyticsSummary = async (period = "monthly") => {
+  const response = await axios.get(`${BASE_URL}/reports/summary`, {
+    params: { period },
+    withCredentials: true,
+  });
+  return response.data;
+};

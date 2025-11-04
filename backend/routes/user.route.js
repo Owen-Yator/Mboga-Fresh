@@ -9,6 +9,7 @@ import {
   getTotalEscrowBalance,
   listAllOrders,
   listAllTransactions,
+  getAnalyticsSummary,
 } from "../controllers/admin.controller.js";
 
 const router = express.Router();
@@ -36,5 +37,12 @@ router.get(
   requireAuth,
   requireRole(["admin"]),
   getTotalEscrowBalance
+);
+
+router.get(
+  "/reports/summary",
+  requireAuth,
+  requireRole(["admin"]),
+  getAnalyticsSummary
 );
 export default router;
