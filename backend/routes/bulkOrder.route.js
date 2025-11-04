@@ -1,5 +1,4 @@
 import express from "express";
-// Make sure these paths are correct for your project
 import { requireAuth, requireRole } from "../middleware/auth.middleware.js";
 import {
   placeBulkOrder,
@@ -8,6 +7,7 @@ import {
   acceptBulkOrder,
   getBulkOrderTask,
   adminGetAllBulkOrders,
+  checkBulkPaymentStatus, // <-- 1. IMPORT NEW FUNCTION
 } from "../controllers/bulkOrders.controller.js";
 
 const router = express.Router();
@@ -25,6 +25,13 @@ router.get(
   requireRole(["vendor", "admin"]),
   getMyBulkOrders
 );
+// 2. ADD NEW POLLING ROUTE
+router.get(
+  "/payment-status/:orderId",
+  requireAuth,
+  requireRole(["vendor", "admin"]),
+  checkBulkPaymentStatus
+);
 
 // --- Farmer Routes (Selling) ---
 router.get(
@@ -34,13 +41,13 @@ router.get(
   getFarmerBulkOrders
 );
 router.patch(
-  "/:id/accept", // Farmer accepts order
+  "/:id/accept",
   requireAuth,
   requireRole(["farmer", "admin"]),
   acceptBulkOrder
 );
 router.get(
-  "/:id/task", // Farmer gets task for QR code
+  "/:id/task",
   requireAuth,
   requireRole(["farmer", "admin"]),
   getBulkOrderTask

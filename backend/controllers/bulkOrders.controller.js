@@ -1,8 +1,10 @@
 import BulkOrder from "../models/bulkOrder.model.js";
 import BulkProduct from "../models/bulkProduct.model.js";
 import FarmerProfile from "../models/farmerProfile.model.js";
-// MODIFIED: Import the correct B2B task model
+import { User } from "../models/user.model.js";
 import BulkDeliveryTask from "../models/bulkDeliveryTask.model.js";
+import { initiateSTKPush } from "../services/daraja.service.js";
+import mongoose from "mongoose";
 import fs from "fs";
 import path from "path";
 import Joi from "joi";
@@ -17,7 +19,6 @@ function escapeRegex(str = "") {
   return String(str).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-// Helper to generate random codes
 const generateRandomCode = (length = 6) => {
   return Math.random()
     .toString(36)
@@ -289,24 +290,48 @@ export const placeBulkOrder = async (req, res) => {
     }
     const farmerId = firstProduct.ownerId;
 
+    const newOrderId = new mongoose.Types.ObjectId();
+
+    // Initiate STK Push
+    const mpesaResult = await initiateSTKPush(
+      totalAmount,
+      mpesaPhone,
+      newOrderId.toString()
+    );
+
+    // --- 1. ADD THIS LOG ---
+    console.log("--- B2B STK PUSH RESPONSE ---");
+    console.log(JSON.stringify(mpesaResult, null, 2));
+    // --- END OF LOG ---
+
+    if (mpesaResult.responseCode !== "0") {
+      return res.status(400).json({
+        message:
+          mpesaResult.customerMessage || "M-Pesa push failed to initiate.",
+      });
+    }
+
     const newOrder = new BulkOrder({
+      _id: newOrderId,
       vendorId: vendorUserId,
       farmerId: farmerId,
       items: items,
       totalAmount: totalAmount,
       shippingAddress,
-      paymentStatus: "Escrow",
-      orderStatus: "Pending",
+      paymentStatus: "Pending",
+      orderStatus: "Processing",
       paymentDetails: {
         mpesaPhone,
+        checkoutRequestId: mpesaResult.checkoutRequestId,
       },
     });
 
     const savedOrder = await newOrder.save();
 
     res.status(201).json({
-      message: "Order placed successfully",
+      message: "M-Pesa STK Push initiated.",
       orderId: savedOrder._id,
+      checkoutRequestId: mpesaResult.checkoutRequestId,
     });
   } catch (err) {
     console.error("Place Bulk Order Error:", err);
@@ -314,9 +339,6 @@ export const placeBulkOrder = async (req, res) => {
   }
 };
 
-// @desc    Get all bulk orders placed BY the logged-in vendor
-// @route   GET /api/bulk-orders/my-orders
-// @access  Private (Vendor)
 export const getMyBulkOrders = async (req, res) => {
   try {
     const vendorUserId = req.user._id;
@@ -327,20 +349,17 @@ export const getMyBulkOrders = async (req, res) => {
         select: "name",
       })
       .populate({
-        path: "farmerId", // Populate the farmer's User model
+        path: "farmerId",
         select: "name avatar",
       })
-      // --- THIS IS THE MODIFICATION ---
       .populate({
         path: "task",
-        select: "vendorConfirmationCode status", // Get the code and status
+        select: "vendorConfirmationCode status",
         model: "BulkDeliveryTask",
       })
-      // --- END MODIFICATION ---
       .sort({ createdAt: -1 })
       .lean();
 
-    // Enrich with FarmerProfile farmName
     const farmerIds = orders.map((o) => o.farmerId?._id).filter(Boolean);
     const profiles = await FarmerProfile.find({ user: { $in: farmerIds } })
       .select("user farmName")
@@ -394,19 +413,16 @@ export const acceptBulkOrder = async (req, res) => {
       return res.status(400).json({ message: "Order already processed" });
     }
 
-    // 1. Create a new BULK DeliveryTask
     const newTask = new BulkDeliveryTask({
       bulkOrder: order._id,
-      seller: order.farmerId, // The farmer is the seller
+      seller: order.farmerId,
       pickupCode: generateRandomCode(6),
-      vendorConfirmationCode: generateRandomCode(6), // Use the new field name
+      vendorConfirmationCode: generateRandomCode(6),
       deliveryAddress: order.shippingAddress,
       status: "Awaiting Acceptance",
     });
-
     await newTask.save();
 
-    // 2. Update the order
     order.orderStatus = "QR Scanning";
     order.task = newTask._id;
     await order.save();
@@ -472,5 +488,33 @@ export const adminGetAllBulkOrders = async (req, res) => {
   } catch (err) {
     console.error("Error fetching all bulk orders:", err);
     res.status(500).json({ message: "Failed to fetch orders" });
+  }
+};
+
+// --- THIS IS THE MODIFIED FUNCTION ---
+export const checkBulkPaymentStatus = async (req, res) => {
+  const { orderId } = req.params;
+
+  try {
+    const order = await BulkOrder.findById(orderId).select(
+      "paymentStatus paymentDetails.paymentFailureReason vendorId" // <-- ADDED vendorId
+    );
+
+    if (!order) {
+      return res.status(404).json({ message: "Order not found." });
+    }
+
+    // Security check
+    if (order.vendorId.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: "Not authorized." });
+    }
+
+    res.json({
+      paymentStatus: order.paymentStatus,
+      paymentFailureReason: order.paymentDetails?.paymentFailureReason,
+    });
+  } catch (error) {
+    console.error("Error checking bulk order status:", error);
+    res.status(500).json({ message: "Failed to check payment status." });
   }
 };

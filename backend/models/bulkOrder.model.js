@@ -1,3 +1,4 @@
+// backend/models/bulkOrder.model.js
 import mongoose from "mongoose";
 
 const orderItemSchema = new mongoose.Schema({
@@ -16,11 +17,13 @@ const orderItemSchema = new mongoose.Schema({
 
 const bulkOrderSchema = new mongoose.Schema(
   {
+    // The VENDOR who is BUYING
     vendorId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
     },
+    // The FARMER who is SELLING
     farmerId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
@@ -39,23 +42,31 @@ const bulkOrderSchema = new mongoose.Schema(
     },
     orderStatus: {
       type: String,
-      enum: ["Pending", "QR Scanning", "In Transit", "Delivered", "Cancelled"],
-      default: "Pending",
+      // MODIFIED: Added "Processing"
+      enum: [
+        "Processing", // <-- ADDED
+        "Pending",
+        "QR Scanning",
+        "In Transit",
+        "Delivered",
+        "Cancelled",
+      ],
+      default: "Processing", // <-- CHANGED DEFAULT
     },
     paymentStatus: {
       type: String,
-      enum: ["Unpaid", "Paid", "Failed", "Escrow"],
-      default: "Unpaid",
+      // MODIFIED: Added "Pending"
+      enum: ["Pending", "Unpaid", "Paid", "Failed", "Escrow"],
+      default: "Pending", // <-- CHANGED DEFAULT
     },
     paymentDetails: {
       mpesaPhone: { type: String },
       checkoutRequestId: { type: String },
       paymentFailureReason: { type: String },
     },
-    // --- MODIFIED THIS FIELD ---
     task: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "BulkDeliveryTask", // <-- Points to the NEW model
+      ref: "BulkDeliveryTask", // Correctly points to the B2B task model
       default: null,
     },
   },
