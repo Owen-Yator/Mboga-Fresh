@@ -1,6 +1,8 @@
 import Order from "../models/order.model.js";
-import BulkOrder from "../models/bulkOrder.model.js";
+import BulkOrder from "../models/bulkOrder.model.js"; // 1. IMPORT B2B ORDER MODEL
 import { User } from "../models/user.model.js";
+import DeliveryTask from "../models/deliveryTask.model.js";
+import BulkDeliveryTask from "../models/bulkDeliveryTask.model.js";
 import mongoose from "mongoose";
 
 // --- HELPER FUNCTION to parse M-Pesa dates ---
@@ -315,10 +317,59 @@ const getAnalyticsSummary = async (req, res) => {
   }
 };
 
+// --- NEW FUNCTION TO GET DELIVERY CHART DATA ---
+const getDeliveryChartData = async (req, res) => {
+  try {
+    const days = 7; // Get data for the last 7 days
+    const dateLimit = new Date();
+    dateLimit.setDate(dateLimit.getDate() - days + 1);
+    dateLimit.setHours(0, 0, 0, 0);
+
+    const b2cTasks = await DeliveryTask.find({
+      status: "Delivered",
+      createdAt: { $gte: dateLimit },
+    }).select("createdAt");
+
+    const b2bTasks = await BulkDeliveryTask.find({
+      status: "Delivered",
+      createdAt: { $gte: dateLimit },
+    }).select("createdAt");
+
+    const allTasks = [...b2cTasks, ...b2bTasks];
+
+    const chartData = {};
+    for (let i = 0; i < days; i++) {
+      const date = new Date(dateLimit);
+      date.setDate(date.getDate() + i);
+      const key = date.toLocaleDateString("en-CA"); // YYYY-MM-DD
+      chartData[key] = {
+        name: date.toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+        }),
+        deliveries: 0,
+      };
+    }
+
+    allTasks.forEach((task) => {
+      const key = new Date(task.createdAt).toLocaleDateString("en-CA");
+      if (chartData[key]) {
+        chartData[key].deliveries += 1;
+      }
+    });
+
+    res.json(Object.values(chartData));
+  } catch (error) {
+    console.error("Error fetching delivery chart data:", error);
+    res.status(500).json({ message: "Failed to fetch delivery data." });
+  }
+};
+
 // --- FINAL EXPORTS ---
 export {
   getTotalEscrowBalance,
   listAllOrders,
   listAllTransactions,
-  getAnalyticsSummary, // EXPORT NEW FUNCTION
+  getAnalyticsSummary,
+  getDeliveryChartData,
 };

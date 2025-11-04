@@ -10,6 +10,7 @@ import {
   listAllOrders,
   listAllTransactions,
   getAnalyticsSummary,
+  getDeliveryChartData, // <-- 1. IMPORT NEW FUNCTION
 } from "../controllers/admin.controller.js";
 
 const router = express.Router();
@@ -45,4 +46,13 @@ router.get(
   requireRole(["admin"]),
   getAnalyticsSummary
 );
+
+// 2. ADD NEW ROUTE
+router.get(
+  "/reports/deliveries",
+  requireAuth,
+  requireRole(["admin"]),
+  getDeliveryChartData
+);
+
 export default router;

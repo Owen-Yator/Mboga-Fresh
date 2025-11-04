@@ -1,4 +1,3 @@
-// frontend/src/admin/ReportsAnalytics.jsx
 import React, { useState, useEffect, useCallback } from "react";
 import Header from "../components/adminComponents/AdminHeader";
 import Sidebar from "../components/adminComponents/AdminSidebar";
@@ -24,21 +23,19 @@ import {
   Loader2,
   AlertTriangle,
 } from "lucide-react";
-import { fetchAnalyticsSummary } from "../api/admin"; // 1. Import new API
+import { fetchAnalyticsSummary } from "../api/admin";
 
 const formatKsh = (amount) =>
   `Ksh ${Number(amount).toLocaleString("en-KE", {
     minimumFractionDigits: 0,
   })}`;
 
-// --- 2. Main Component ---
 const ReportsAnalytics = () => {
   const [activeTab, setActiveTab] = useState("monthly");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [stats, setStats] = useState(null);
 
-  // 3. Data fetching logic
   const loadStats = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -57,7 +54,6 @@ const ReportsAnalytics = () => {
     loadStats();
   }, [loadStats]);
 
-  // Helper to standardize button style
   const getTabClass = (tab) =>
     `capitalize px-4 py-1.5 rounded-lg text-sm font-semibold transition-colors ${
       activeTab === tab
@@ -65,15 +61,52 @@ const ReportsAnalytics = () => {
         : "text-gray-700 hover:bg-gray-200"
     }`;
 
-  // Data for the B2C vs B2B Pie Chart
+  // --- FIX 1: New colors ---
+  const PIE_COLORS = ["#10B981", "#3B82F6"]; // Emerald-500, Blue-500
+
+  // --- FIX 2: Get total revenue and pie data ---
+  const totalRevenue = stats?.revenueReport?.totalRevenue || 0;
   const orderTypeData = [
     {
       name: "B2C (Retail) Revenue",
-      value: stats?.revenueReport.b2cRevenue || 0,
+      value: stats?.revenueReport?.b2cRevenue || 0,
     },
-    { name: "B2B (Bulk) Revenue", value: stats?.revenueReport.b2bRevenue || 0 },
+    {
+      name: "B2B (Bulk) Revenue",
+      value: stats?.revenueReport?.b2bRevenue || 0,
+    },
   ];
-  const PIE_COLORS = ["#10B981", "#059669"]; // Emerald-500, Emerald-600
+
+  // --- FIX 3: Custom label function to prevent NaN% ---
+  const renderCustomizedLabel = ({
+    cx,
+    cy,
+    midAngle,
+    innerRadius,
+    outerRadius,
+    percent,
+    index,
+  }) => {
+    if (percent === 0) return null; // Don't show a label for 0%
+
+    const RADIAN = Math.PI / 180;
+    const radius = innerRadius + (outerRadius - innerRadius) * 0.5;
+    const x = cx + radius * Math.cos(-midAngle * RADIAN);
+    const y = cy + radius * Math.sin(-midAngle * RADIAN);
+
+    return (
+      <text
+        x={x}
+        y={y}
+        fill="white"
+        textAnchor={x > cx ? "start" : "end"}
+        dominantBaseline="central"
+        className="font-bold text-xs"
+      >
+        {`${(percent * 100).toFixed(0)}%`}
+      </text>
+    );
+  };
 
   return (
     <div className="flex bg-gray-50 min-h-screen">
@@ -94,7 +127,6 @@ const ReportsAnalytics = () => {
                 </p>
               </div>
             </div>
-
             <div className="flex space-x-2 bg-gray-100 p-1 rounded-xl shadow-inner">
               {["daily", "weekly", "monthly"].map((tab) => (
                 <button
@@ -108,7 +140,6 @@ const ReportsAnalytics = () => {
             </div>
           </div>
 
-          {/* 4. Main content conditional rendering */}
           {loading ? (
             <div className="text-center py-24">
               <Loader2 className="w-8 h-8 animate-spin mx-auto text-emerald-600 mb-2" />
@@ -125,7 +156,6 @@ const ReportsAnalytics = () => {
           ) : (
             stats && (
               <>
-                {/* --- 5. New Platform Totals Row --- */}
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
                   <StatCard
                     title="Total Revenue"
@@ -154,46 +184,45 @@ const ReportsAnalytics = () => {
                   />
                 </div>
 
-                {/* KPI and Chart Row */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-                  {/* 6. MODIFIED: Order Breakdown (Pie Chart) */}
                   <div className="bg-white p-6 rounded-2xl shadow-md border border-gray-100">
                     <h2 className="text-xl font-semibold text-gray-800 mb-4">
                       Revenue Breakdown ({activeTab})
                     </h2>
                     <div className="mt-4 h-64">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
-                          <Pie
-                            data={orderTypeData}
-                            cx="50%"
-                            cy="50%"
-                            outerRadius={100}
-                            fill="#8884d8"
-                            dataKey="value"
-                            label={(entry) =>
-                              `${(
-                                (entry.value /
-                                  stats.revenueReport.totalRevenue) *
-                                100
-                              ).toFixed(0)}%`
-                            }
-                          >
-                            {orderTypeData.map((entry, index) => (
-                              <Cell
-                                key={`cell-${index}`}
-                                fill={PIE_COLORS[index % PIE_COLORS.length]}
-                              />
-                            ))}
-                          </Pie>
-                          <Tooltip formatter={(value) => formatKsh(value)} />
-                          <Legend />
-                        </PieChart>
-                      </ResponsiveContainer>
+                      {/* --- FIX 4: Check if totalRevenue is 0 --- */}
+                      {totalRevenue === 0 ? (
+                        <div className="flex items-center justify-center h-full text-gray-500">
+                          No revenue data for this period.
+                        </div>
+                      ) : (
+                        <ResponsiveContainer width="100%" height="100%">
+                          <PieChart>
+                            <Pie
+                              data={orderTypeData}
+                              cx="50%"
+                              cy="50%"
+                              outerRadius={100}
+                              fill="#8884d8"
+                              dataKey="value"
+                              labelLine={false}
+                              label={renderCustomizedLabel} // Use custom label
+                            >
+                              {orderTypeData.map((entry, index) => (
+                                <Cell
+                                  key={`cell-${index}`}
+                                  fill={PIE_COLORS[index % PIE_COLORS.length]}
+                                />
+                              ))}
+                            </Pie>
+                            <Tooltip formatter={(value) => formatKsh(value)} />
+                            <Legend />
+                          </PieChart>
+                        </ResponsiveContainer>
+                      )}
                     </div>
                   </div>
 
-                  {/* 7. MODIFIED: Revenue Trend (Line Chart) */}
                   <div className="bg-white p-6 rounded-2xl shadow-md border border-gray-100">
                     <h2 className="text-xl font-semibold text-gray-800 mb-4">
                       Revenue Trend ({activeTab})
@@ -202,7 +231,6 @@ const ReportsAnalytics = () => {
                       <p className="text-4xl font-bold text-gray-900">
                         {formatKsh(stats.revenueReport.totalRevenue)}
                       </p>
-                      {/* Note: Trend % is a complex calculation, removed for now */}
                     </div>
 
                     <div className="mt-4 h-48">
@@ -251,15 +279,25 @@ const ReportsAnalytics = () => {
   );
 };
 
-// 8. NEW: Helper component for the stat cards
-const StatCard = ({ title, value, icon: Icon, color, note = "" }) => (
+const StatCard = ({
+  title,
+  value,
+  icon: Icon,
+  color,
+  note = "",
+  noteColor = "text-gray-500",
+}) => (
   <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
     <div className="flex items-center justify-between mb-1">
-      <h3 className={`text-sm font-semibold ${color}`}>{title}</h3>
-      <Icon className={`w-5 h-5 ${color}`} />
+      <h3 className={`text-sm font-semibold ${color || "text-gray-600"}`}>
+        {title}
+      </h3>
+      <Icon className={`w-5 h-5 ${color || "text-gray-400"}`} />
     </div>
-    <p className="text-3xl font-bold text-gray-900">{value}</p>
-    {note && <p className="text-xs text-gray-500 mt-1">{note}</p>}
+    <h2 className="text-3xl font-bold text-gray-800 mt-1">{value}</h2>
+    {note && (
+      <p className={`text-xs font-semibold mt-1 ${noteColor}`}>{note}</p>
+    )}
   </div>
 );
 
