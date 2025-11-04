@@ -9,6 +9,8 @@ import {
   getTotalEscrowBalance,
   listAllOrders,
   listAllTransactions,
+  getAnalyticsSummary,
+  getDeliveryChartData, // <-- 1. IMPORT NEW FUNCTION
 } from "../controllers/admin.controller.js";
 
 const router = express.Router();
@@ -37,4 +39,20 @@ router.get(
   requireRole(["admin"]),
   getTotalEscrowBalance
 );
+
+router.get(
+  "/reports/summary",
+  requireAuth,
+  requireRole(["admin"]),
+  getAnalyticsSummary
+);
+
+// 2. ADD NEW ROUTE
+router.get(
+  "/reports/deliveries",
+  requireAuth,
+  requireRole(["admin"]),
+  getDeliveryChartData
+);
+
 export default router;

@@ -42,31 +42,31 @@ const bulkOrderSchema = new mongoose.Schema(
     },
     orderStatus: {
       type: String,
-      // MODIFIED: Added "Processing"
       enum: [
-        "Processing", // <-- ADDED
+        "Processing",
         "Pending",
         "QR Scanning",
         "In Transit",
         "Delivered",
         "Cancelled",
       ],
-      default: "Processing", // <-- CHANGED DEFAULT
+      default: "Processing",
     },
     paymentStatus: {
       type: String,
-      // MODIFIED: Added "Pending"
       enum: ["Pending", "Unpaid", "Paid", "Failed", "Escrow"],
-      default: "Pending", // <-- CHANGED DEFAULT
+      default: "Pending",
     },
     paymentDetails: {
       mpesaPhone: { type: String },
       checkoutRequestId: { type: String },
       paymentFailureReason: { type: String },
+      mpesaReceiptNumber: { type: String },
+      mpesaTransactionDate: { type: String },
     },
     task: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "BulkDeliveryTask", // Correctly points to the B2B task model
+      ref: "BulkDeliveryTask",
       default: null,
     },
   },
