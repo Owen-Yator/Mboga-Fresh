@@ -30,6 +30,14 @@ export const placeBulkOrderRequest = (payload) => {
   );
 };
 
+export const checkBulkPaymentStatus = (orderId) => {
+  return handleResponse(
+    axios.get(`${API_BASE}/api/bulk-orders/payment-status/${orderId}`, {
+      withCredentials: true,
+    })
+  );
+};
+
 // --- FARMER (SELLER) FUNCTIONS ---
 
 export const fetchFarmerBulkOrders = () => {

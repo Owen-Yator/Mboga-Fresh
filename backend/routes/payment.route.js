@@ -1,5 +1,3 @@
-// backend/routes/payment.route.js (NEW FILE)
-
 import express from "express";
 import { handleMpesaCallback } from "../controllers/payment.controller.js";
 import { requireAuth } from "../middleware/auth.middleware.js"; // Reusing auth for potential future routes

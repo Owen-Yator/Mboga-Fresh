@@ -16,13 +16,16 @@ import {
 
 const FarmerDataContext = createContext();
 
-export const useFarmerData = () => {
+// --- THIS IS THE FIX ---
+// Changed from 'export const useFarmerData = () => {'
+export function useFarmerData() {
   const ctx = useContext(FarmerDataContext);
   if (!ctx) {
     throw new Error("useFarmerData must be used within a FarmerDataProvider");
   }
   return ctx;
-};
+}
+// --- END OF FIX ---
 
 export const FarmerDataProvider = ({ children }) => {
   const { user } = useAuth();
@@ -40,15 +43,12 @@ export const FarmerDataProvider = ({ children }) => {
 
   const unreadCount = notifications.filter((n) => !n.isRead).length;
 
-  // Balances derived from transactions (live data)
   const balances = React.useMemo(() => {
     let escrow = 0;
     let available = 0;
     let earnings = 0;
 
     transactions.forEach((order) => {
-      // --- THIS IS THE FIX ---
-      // The field is 'orderStatus', not 'status'
       if (order.orderStatus === "Delivered") {
         available += order.totalAmount;
         earnings += order.totalAmount;
@@ -56,13 +56,12 @@ export const FarmerDataProvider = ({ children }) => {
         order.orderStatus !== "Cancelled" &&
         order.paymentStatus === "Escrow"
       ) {
-        // --- END OF FIX ---
         escrow += order.totalAmount;
       }
     });
 
     return { escrow, available, earnings };
-  }, [transactions]); // This calculation depends on the 'transactions' state
+  }, [transactions]);
 
   const loadAllFarmerData = useCallback(async () => {
     if (!user || user.role !== "farmer") {
@@ -74,7 +73,6 @@ export const FarmerDataProvider = ({ children }) => {
     setError(null);
 
     try {
-      // Fetch all data in parallel
       const [metrics, orders, notifs] = await Promise.all([
         fetchFarmerDashboardMetrics(),
         fetchFarmerBulkOrders(),
@@ -82,7 +80,7 @@ export const FarmerDataProvider = ({ children }) => {
       ]);
 
       setDashboardData(metrics);
-      setTransactions(orders); // This sets the 'transactions' used by 'balances'
+      setTransactions(orders);
       setNotifications(notifs);
     } catch (err) {
       console.error("Failed to load farmer data:", err);
@@ -96,11 +94,8 @@ export const FarmerDataProvider = ({ children }) => {
     loadAllFarmerData();
   }, [loadAllFarmerData]);
 
-  // --- Notification Handlers ---
-
   const handleMarkAsRead = async (notificationId) => {
     try {
-      // Use _id from MongoDB
       await markNotificationAsRead(notificationId);
       setNotifications((prev) =>
         prev.map((n) => (n._id === notificationId ? { ...n, isRead: true } : n))
@@ -119,16 +114,9 @@ export const FarmerDataProvider = ({ children }) => {
     }
   };
 
-  // --- Wallet Handler ---
-
   const handleWithdraw = (amount, mpesaNumber) => {
-    // TODO: Implement real withdrawal API call
     console.log(`Simulating withdrawal of ${amount} to ${mpesaNumber}`);
     alert("Withdrawal simulation. Check console.");
-
-    // In a real app, you would make an API call, and on success,
-    // refresh the transactions list (which would include a new "Withdrawal" entry)
-    // For now, we just return true.
     return true;
   };
 

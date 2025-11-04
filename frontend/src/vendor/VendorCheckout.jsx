@@ -4,8 +4,11 @@ import Sidebar from "../components/vendorComponents/Sidebar";
 import CheckoutProgress from "../components/CheckoutProgress";
 import { useBulkCart } from "../context/BulkCartContext";
 import { useNavigate } from "react-router-dom";
-import { placeBulkOrderRequest } from "../api/bulkOrders";
-// import { checkPaymentStatus } from "../api/bulkOrders";
+// MODIFIED: Import both functions
+import {
+  placeBulkOrderRequest,
+  checkBulkPaymentStatus,
+} from "../api/bulkOrders";
 import { useAuth } from "../context/AuthContext";
 import axios from "axios";
 
@@ -18,7 +21,7 @@ const VendorCheckout = () => {
   const [formError, setFormError] = useState(null);
   const [lastMpesaError, setLastMpesaError] = useState(null);
 
-  const SHIPPING_FEE = 1;
+  const SHIPPING_FEE = 0;
   const TOTAL_AMOUNT = subtotal + SHIPPING_FEE;
 
   const [paymentPhone, setPaymentPhone] = useState(user?.phone || "");
@@ -64,6 +67,7 @@ const VendorCheckout = () => {
     setAddressForm((prev) => ({ ...prev, [name]: value }));
   };
 
+  // --- MODIFIED: This function now handles real polling ---
   const handleConfirm = async () => {
     let rawPhone = paymentPhone.replace(/\D/g, "");
     let normalizedPhone;
@@ -142,26 +146,54 @@ const VendorCheckout = () => {
         await refresh();
       }
 
+      // 1. Initiate the STK Push
       const result = await placeBulkOrderRequest(payload);
       const orderId = result.orderId;
 
-      console.log("Simulating STK Push...");
-      await new Promise((r) => setTimeout(r, 2000));
-      const paymentComplete = true;
+      // 2. Start Polling for payment status
+      let paymentComplete = false;
+      let paymentFailed = false;
+      let attempts = 0;
+      let maxAttempts = 20; // 20 attempts * 3 seconds = 60 seconds
+      let finalErrorMessage = "M-Pesa payment timed out. Please retry.";
+      let statusCheck;
 
-      if (paymentComplete) {
-        clearCart();
-        // MODIFIED: Navigate to the new vendor order placed page
-        navigate("/vendor-order-placed", {
-          state: {
-            orderNumber: orderId,
-            eta: "2-4 days (bulk)",
-            itemsSummary: items,
-          },
-        });
-      } else {
-        throw new Error("Payment failed or was cancelled.");
+      while (!paymentComplete && !paymentFailed && attempts < maxAttempts) {
+        await new Promise((r) => setTimeout(r, 3000)); // Wait 3 seconds
+
+        try {
+          statusCheck = await checkBulkPaymentStatus(orderId);
+        } catch (pollingError) {
+          console.warn("Polling error:", pollingError.message);
+        }
+
+        if (statusCheck?.paymentStatus === "Escrow") {
+          // B2B Success state
+          paymentComplete = true;
+        } else if (statusCheck?.paymentStatus === "Failed") {
+          paymentFailed = true;
+          finalErrorMessage =
+            statusCheck.paymentFailureReason ||
+            "M-Pesa transaction failed or was cancelled.";
+        }
+        attempts++;
       }
+      // --- End Polling ---
+
+      if (paymentFailed || !paymentComplete) {
+        setLastMpesaError(finalErrorMessage);
+        throw new Error(finalErrorMessage);
+      }
+
+      // 3. On Success
+      clearCart();
+      navigate("/vendor-order-placed", {
+        state: {
+          orderNumber: orderId,
+          eta: "2-4 days (bulk)",
+          itemsSummary: items,
+        },
+      });
     } catch (err) {
       console.error("Order Placement Error:", err);
       const msg =
@@ -175,7 +207,7 @@ const VendorCheckout = () => {
   };
 
   if (!items || items.length === 0) {
-    // ... (empty cart component)
+    // ... (empty cart component, no changes) ...
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
         <Header avatarUrl={user?.avatar} userName={user?.name || "Vendor"} />
